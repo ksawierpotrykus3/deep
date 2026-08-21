@@ -20,6 +20,7 @@ from subagent_isolation import (
 from conversation_tracker import (
     build_conversation_summary, get_rotation_warning,
 )
+import monitor
 from fastapi import FastAPI, HTTPException, Request, Body
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -3149,6 +3150,8 @@ def chat_completions(req: ChatRequest, raw_request: Request):
     # ── Subagent Circuit Breaker timing ──
     subagent_timing_key = record_subagent_start() if is_subagent else None
     subagent_stream_start = time.time() if is_subagent else 0
+    # ── Monitor sesji: rejestracja tego żądania ──
+    monitor.start(watermark_uuid, conv_key=conv_key, is_subagent=is_subagent, account_idx=account_idx)
     for attempt in range(2):  # max 1 migration
         try:
             # ── Chunked Ingestion with Immediate Abort dla dużych promptów (> 50k znaków) ──
@@ -3391,11 +3394,18 @@ def chat_completions(req: ChatRequest, raw_request: Request):
             success = False
             try:
                 for chunk in _heartbeat_iter(stream):
+                    # Monitor: sprawdź czy żądanie ma być zatrzymane (np. zgłoszone jako martwe)
+                    _stop_ev = monitor.get_stop_event(watermark_uuid)
+                    if _stop_ev is not None and _stop_ev.is_set():
+                        print(f"[MONITOR] Stop requested for {watermark_uuid[:12]}...", flush=True)
+                        raise GeneratorExit
                     if chunk is _HEARTBEAT_SENTINEL:
                         # Bug 26: podtrzymuj polaczenie SSE podczas ciszy (myslenie/CoT)
+                        monitor.heartbeat(watermark_uuid)
                         yield ": keep-alive\n\n"
                         continue
                     if chunk:
+                        monitor.token(watermark_uuid)
                         full += chunk
                         tools = _parse_tool_calls(full)
                         if tools:
@@ -3605,6 +3615,7 @@ def chat_completions(req: ChatRequest, raw_request: Request):
                 print(f"[DISCONNECT] Client disconnected at stream end", flush=True)
                 return
         finally:
+            monitor.finish(watermark_uuid, ok=True)
             with _slot_busy_lock:
                 _slot_busy[account_idx] = False
 
@@ -3647,6 +3658,20 @@ def health():
     sub_stats = get_subagent_stats()
     return {"status": "ok", "slots": slots, "any_valid": any(slots),
             "subagents": sub_stats, "official_api": official_api.available}
+
+
+@app.get("/v1/monitor/sessions")
+def monitor_sessions():
+    """Podgląd: co robią teraz główny agent i subagenci (active/slow/dead)."""
+    return {"sessions": monitor.get_snapshot()}
+
+
+@app.post("/v1/monitor/stop")
+def monitor_stop(session_id: str):
+    """Zatrzymaj żądanie o podanym session_id (np. martwe)."""
+    if monitor.request_stop(session_id):
+        return {"status": "ok", "session_id": session_id, "requested": "stop"}
+    raise HTTPException(404, f"Nie znaleziono aktywnej sesji: {session_id}")
 
 
 if __name__ == "__main__":
