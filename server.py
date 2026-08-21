@@ -20,7 +20,7 @@ from subagent_isolation import (
 from conversation_tracker import (
     build_conversation_summary, get_rotation_warning,
 )
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Body
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -2616,10 +2616,10 @@ def _handle_official_api_chat(
 
 
 @app.post("/v1/chat/completions")
-async def chat_completions(req: ChatRequest, raw_request: Request):
+def chat_completions(req: ChatRequest, raw_request: Request):
     t0 = time.time()
     # Log raw request body to see EVERYTHING Trae sends
-    body_bytes = await raw_request.body()
+    body_bytes = raw_request._body or b""
     body_str = body_bytes.decode("utf-8", "ignore")
     try:
         raw_json = json.loads(body_str)
