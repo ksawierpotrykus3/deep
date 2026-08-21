@@ -210,3 +210,4 @@ def reset_all() -> None:
     with _lock:
         _sessions.clear()
         _stop_events.clear()
+        _hard_stops.clear()
