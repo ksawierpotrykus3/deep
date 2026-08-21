@@ -1907,7 +1907,10 @@ _STRIP_TAGS = re.compile(
     r"</?parameter[^>]*>|"
     r"<[|\uff5c\u2502\s]*tool\s*call\s*begin[|\uff5c\u2502\s]*>.*?<[|\uff5c\u2502\s]*tool\s*call\s*end[|\uff5c\u2502\s]*>|"
     r"</?[|\uff5c\u2502\s]*tool[_\s]*calls?\s*(?:begin|end)?[|\uff5c\u2502\s]*>|"
-    r"<tool_call[^>]*>.*?</tool_calls?>|" + rf"\[{_CALL_MARKER}\s*\w+\]",
+    r"<tool_call[^>]*>.*?</tool_calls?>|"
+    rf"\[{_CALL_MARKER}\s*\w+\]|"
+    r"\[/?[|\uff5c\u2502\s]*DSML[|\uff5c\u2502\s]*[a-z0-9_]*\]|"   # [｜｜DSML｜｜], [｜｜DSMLparam], [/｜｜DSMLparam] - kwadratowe znaczniki DSML
+    r"\[/[|\uff5c\u2502\s]*[a-z_][a-z0-9_]*\]",                     # [/parameter], [/｜｜parameter] - zamykajacy tag kontrolny w [ ]
     re.DOTALL | re.IGNORECASE
 )
 
@@ -3536,7 +3539,7 @@ def _chat_completions_impl(req: ChatRequest, raw_request: Request):
                                                 sent_until += rb + 1
                                         else:
                                             # Partial bracket, no ']' yet – wait if it looks like a tool marker start
-                                            if delta == '[' or re.match(rf'\[\s*(?:{_CALL_MARKER}|tool|[a-zA-Z])', delta):
+                                            if delta == '[' or re.match(rf'\[\s*(?:{_CALL_MARKER}|tool|/[|\uff5c\u2502\s]*[a-z]?|[a-zA-Z])', delta):
                                                 pass
                                             else:
                                                 yield _chunk({"content": "["})
