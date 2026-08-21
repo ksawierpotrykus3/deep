@@ -1900,7 +1900,7 @@ _STRIP_TAGS = re.compile(
     r"-reminder>[^\n]*|"
     r"<critical_directive>[\s\S]*?</critical_directive>|"
     r"</?previous_tool_call[^>]*>|"
-    r"</?(?:[|\uff5c\u2502\s]*DSML[|\uff5c\u2502\s]*|tool_calls?|tool_capability|invoke|_calls?|call|tools?|center)[^>]*>|"
+    r"</?(?:[|\uff5c\u2502\s]*DSML[|\uff5c\u2502\s]*|tool_calls?|tool_capability|invoke|_calls?|[|\uff5c\u2502\s]*cl_calls?|call|tools?|center)[^>]*>|"
     r"<tool_result[^>]*>.*?</tool_result>|</?tool_result[^>]*>|"
     r"<result[^>]*>|</result>|<status[^>]*>.*?</status>|"
     r"</?thinking[^>]*>|<tool_use_json[^>]*>.*?</tool_use_json>|"
@@ -1964,6 +1964,12 @@ _slot_locks = [threading.Lock() for _ in range(MAX_ACCOUNTS)]
 _slot_in_progress = [False] * MAX_ACCOUNTS
 _slot_busy = [False] * MAX_ACCOUNTS
 _slot_busy_lock = threading.Lock()
+
+# ── Bramka limitu równoległości (#2): ile żądań może jednocześnie przechodzić
+# przez fazę budowy promptu + wywołania DeepSeek (blokujący requests.post + preambuła).
+# Streaming po przejściu bramki działa równolegle — bramka ogranicza burst upstream.
+_MAX_PARALLEL = int(os.environ.get("MAX_PARALLEL_STREAMS", "6"))
+_parallel_gate = threading.BoundedSemaphore(_MAX_PARALLEL)
 _conv_lock = threading.Lock()
 _rate_limited_until: list[float] = [0.0] * MAX_ACCOUNTS
 
@@ -2618,6 +2624,16 @@ def _handle_official_api_chat(
 
 @app.post("/v1/chat/completions")
 def chat_completions(req: ChatRequest, raw_request: Request):
+    """Bramka limitu równoległości (#2): max _MAX_PARALLEL żądań w fazie
+    budowy promptu + blokującego wywołania DeepSeek naraz."""
+    _parallel_gate.acquire()
+    try:
+        return _chat_completions_impl(req, raw_request)
+    finally:
+        _parallel_gate.release()
+
+
+def _chat_completions_impl(req: ChatRequest, raw_request: Request):
     t0 = time.time()
     # Log raw request body to see EVERYTHING Trae sends
     body_bytes = raw_request._body or b""
@@ -3392,13 +3408,48 @@ def chat_completions(req: ChatRequest, raw_request: Request):
                 print(f"[DISCONNECT] Client disconnected before stream", flush=True)
                 return
             success = False
+            _restart_budget = 1
+
+            def _stream_source():
+                """Źródło chunków z auto-restartem (#3): sweeper ustawia stop
+                na sesji 'slow'/'dead' → podmieniamy strumień (max 1 raz).
+                Hard stop (ręczny POST /v1/monitor/stop) → natychmiastowe przerwanie."""
+                nonlocal stream, result_meta, _restart_budget, full, sent_until, tools_yielded
+                while True:
+                    for _ch in _heartbeat_iter(stream):
+                        _ev = monitor.get_stop_event(watermark_uuid)
+                        if _ev is not None and _ev.is_set():
+                            if monitor.is_hard_stop(watermark_uuid):
+                                print(f"[MONITOR] Hard stop {watermark_uuid[:12]}...", flush=True)
+                                raise GeneratorExit
+                            if _restart_budget > 0:
+                                _restart_budget -= 1
+                                print(f"[MONITOR] Auto-restart {watermark_uuid[:12]}... (kill->restart, budget={_restart_budget})", flush=True)
+                                monitor.clear_stop(watermark_uuid)
+                                try:
+                                    _ns, _nm = ds.stream_completion(
+                                        account_idx, chat_id, prompt, parent_id, max_tok,
+                                        req.temperature, req.top_p, model_type=model_type,
+                                        ref_file_ids=ref_file_ids, thinking_enabled=thinking_enabled,
+                                        search_enabled=search_enabled)
+                                except Exception as _e:
+                                    print(f"[MONITOR] Restart failed: {_e}", flush=True)
+                                    raise GeneratorExit
+                                if _ns is None:
+                                    print(f"[MONITOR] Restart returned None (401?)", flush=True)
+                                    raise GeneratorExit
+                                stream = _ns
+                                result_meta.update(_nm)
+                                full = ""
+                                sent_until = 0
+                                tools_yielded = 0
+                                break
+                        yield _ch
+                    else:
+                        return
+
             try:
-                for chunk in _heartbeat_iter(stream):
-                    # Monitor: sprawdź czy żądanie ma być zatrzymane (np. zgłoszone jako martwe)
-                    _stop_ev = monitor.get_stop_event(watermark_uuid)
-                    if _stop_ev is not None and _stop_ev.is_set():
-                        print(f"[MONITOR] Stop requested for {watermark_uuid[:12]}...", flush=True)
-                        raise GeneratorExit
+                for chunk in _stream_source():
                     if chunk is _HEARTBEAT_SENTINEL:
                         # Bug 26: podtrzymuj polaczenie SSE podczas ciszy (myslenie/CoT)
                         monitor.heartbeat(watermark_uuid)
@@ -3668,10 +3719,23 @@ def monitor_sessions():
 
 @app.post("/v1/monitor/stop")
 def monitor_stop(session_id: str):
-    """Zatrzymaj żądanie o podanym session_id (np. martwe)."""
-    if monitor.request_stop(session_id):
-        return {"status": "ok", "session_id": session_id, "requested": "stop"}
+    """Zatrzymaj żądanie o podanym session_id (np. martwe). Hard stop — bez restaru."""
+    if monitor.request_stop(session_id, hard=True):
+        return {"status": "ok", "session_id": session_id, "requested": "hard_stop"}
     raise HTTPException(404, f"Nie znaleziono aktywnej sesji: {session_id}")
+
+
+def _sweeper_loop():
+    """Auto-kill (#3): co 5s przeszukuje sesje monitora i zabija 'slow' za długo / 'dead'.
+    Zabite sesje dostają max 1 auto-restart w generate() (budżet _restart_budget)."""
+    while True:
+        try:
+            killed = monitor.sweep()
+            for sid in killed:
+                print(f"[MONITOR] Auto-kill: {sid[:12]}... (slow/dead -> restart przydzielony)", flush=True)
+        except Exception as e:
+            print(f"[MONITOR] sweep error: {e}", flush=True)
+        time.sleep(5)
 
 
 if __name__ == "__main__":
@@ -3705,5 +3769,7 @@ if __name__ == "__main__":
         print(f"Active accounts: {len(valid_slots)} logged in (slots: {valid_slots}). Ready for requests.")
     else:
         print("No accounts found. Open a SECOND CMD in this folder and run:  login_slot.bat 0")
+    threading.Thread(target=_sweeper_loop, daemon=True).start()
+    print("[STARTUP] Monitor sweeper started (auto-kill #3, co 5s)", flush=True)
     print("Starting on http://localhost:4570")
     uvicorn.run(app, host="0.0.0.0", port=4570)

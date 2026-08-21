@@ -23,10 +23,12 @@ SNAPSHOT_FILE = os.path.join(MONITOR_DIR, "sessions_monitor.json")
 MONITOR_INTERVAL = 5.0   # jak często zapisujemy snapshot [s]
 SLOW_AFTER = 30.0        # bez tokenu > tyle = slow (timeout)
 DEAD_AFTER = 45.0        # bez serca > tyle = dead (martwy)
+KILL_SLOW_AFTER = 60.0   # slow (bez tokenu) dłużej niż tyle = auto-kill + restart
 
 _lock = threading.Lock()
 _sessions: dict[str, dict] = {}
 _stop_events: dict[str, threading.Event] = {}
+_hard_stops: dict[str, bool] = {}
 _writer_started = False
 
 
@@ -87,6 +89,7 @@ def finish(session_id: str, ok: bool) -> None:
             s["ok"] = bool(ok)
             s["state"] = "done"
         ev = _stop_events.pop(session_id, None)
+        _hard_stops.pop(session_id, None)
 
 
 def get_stop_event(session_id: str) -> threading.Event | None:
@@ -94,14 +97,56 @@ def get_stop_event(session_id: str) -> threading.Event | None:
         return _stop_events.get(session_id)
 
 
-def request_stop(session_id: str) -> bool:
-    """Poproś żądanie, żeby się zatrzymało. Zwraca True, jeśli istniało."""
+def request_stop(session_id: str, hard: bool = False) -> bool:
+    """Poproś żądanie, żeby się zatrzymało. Zwraca True, jeśli istniało.
+    hard=True (ręczny stop z endpointu) → natychmiastowe przerwanie, bez restaru.
+    hard=False (auto-kill sweepera) → restartowalne (max 1 auto-restart)."""
     with _lock:
         ev = _stop_events.get(session_id)
         if ev is not None:
             ev.set()
+            if hard:
+                _hard_stops[session_id] = True
             return True
         return False
+
+
+def is_hard_stop(session_id: str) -> bool:
+    with _lock:
+        return bool(_hard_stops.get(session_id))
+
+
+def clear_stop(session_id: str) -> None:
+    """Wyczyść stop event (np. przed auto-restartem)."""
+    with _lock:
+        ev = _stop_events.get(session_id)
+        if ev is not None:
+            ev.clear()
+        _hard_stops.pop(session_id, None)
+
+
+def sweep() -> list[str]:
+    """Auto-kill (#3): ustaw stop event na sesjach 'dead' (serce stanęło)
+    lub 'slow' za długo (bez tokenu > KILL_SLOW_AFTER, serce żyje).
+    Zwraca listę session_id, które zostały oznaczone do zabicia.
+    Idempotentne: nie ustawia eventu dwa razy na tej samej sesji."""
+    killed = []
+    now = time.time()
+    with _lock:
+        for sid, s in _sessions.items():
+            if s.get("finished"):
+                continue
+            hb = s.get("last_heartbeat") or 0
+            tk = s.get("last_token") or 0
+            dead = bool(hb) and (now - hb) > DEAD_AFTER
+            slow_too_long = bool(tk) and (now - tk) > KILL_SLOW_AFTER and (now - hb) <= DEAD_AFTER
+            if dead or slow_too_long:
+                ev = _stop_events.get(sid)
+                if ev is not None and not ev.is_set():
+                    ev.set()
+                    s["auto_killed"] = True
+                    killed.append(sid)
+    return killed
 
 
 def _derive_state(s: dict) -> str:
