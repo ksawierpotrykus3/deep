@@ -1,0 +1,18 @@
+# Reguły Trae: Współpraca z modelem multimodalnym Gemini Oracle
+
+W tym projekcie dostępny jest serwer MCP `gemini-oracle` oraz narzędzie CLI `gemini_proxy.ask`.
+
+## Kiedy i jak używać Gemini:
+
+1. **Ocena Wizualna / Zrzuty Ekranu / Makiety UI (Vision):**
+   - DeepSeek sam nie ma natywnej wizji, ale ma dostęp do Gemini 3.7 Flash z wizją.
+   - Użyj narzędzia MCP: `ask_gemini_vision(prompt, image_path)`
+   - LUB wywołaj w terminalu: `python -m gemini_proxy.ask "Oceń UI..." --image "sciezka/do/screenshot.png"`
+
+2. **Analiza Dużych Plików Kodu i Całych Modułów:**
+   - Gemini posiada gigantyczne okno kontekstu i natychmiast czyta całe pliki bez ucinania.
+   - Użyj narzędzia MCP: `ask_gemini_code_and_files(prompt, file_paths)`
+   - LUB wywołaj w terminalu: `python -m gemini_proxy.ask "Zoptymalizuj ten moduł..." --file "src/plik.tsx"`
+
+3. **Głębokie Badania Rynkowe i Technologiczne (Deep Research):**
+   - W terminalu: `python -m gemini_proxy.run_deep_research --topic "Temat badania..." --output "raport.md"`

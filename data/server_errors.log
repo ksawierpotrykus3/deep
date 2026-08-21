@@ -1,0 +1,108 @@
+[13:16:36] POST /v1/chat/completions
+Traceback (most recent call last):
+  File "C:\Users\Ksawier\Pictures\Screenshots\Projekty_autorskie\deepseek-proxy-clean\server.py", line 789, in _log_errors_middleware
+    response = await call_next(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Ksawier\AppData\Local\Programs\Python\Python313\Lib\site-packages\starlette\middleware\base.py", line 168, in call_next
+    raise app_exc from app_exc.__cause__ or app_exc.__context__
+  File "C:\Users\Ksawier\AppData\Local\Programs\Python\Python313\Lib\site-packages\starlette\middleware\base.py", line 144, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\Ksawier\AppData\Local\Programs\Python\Python313\Lib\site-packages\starlette\middleware\exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "C:\Users\Ksawier\AppData\Local\Programs\Python\Python313\Lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "C:\Users\Ksawier\AppData\Local\Programs\Python\Python313\Lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "C:\Users\Ksawier\AppData\Local\Programs\Python\Python313\Lib\site-packages\fastapi\middleware\asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "C:\Users\Ksawier\AppData\Local\Programs\Python\Python313\Lib\site-packages\starlette\routing.py", line 660, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "C:\Users\Ksawier\AppData\Local\Programs\Python\Python313\Lib\site-packages\fastapi\routing.py", line 2683, in app
+    await route.handle(scope, receive, send)
+  File "C:\Users\Ksawier\AppData\Local\Programs\Python\Python313\Lib\site-packages\fastapi\routing.py", line 1266, in handle
+    await super().handle(scope, receive, send)
+  File "C:\Users\Ksawier\AppData\Local\Programs\Python\Python313\Lib\site-packages\starlette\routing.py", line 276, in handle
+    await self.app(scope, receive, send)
+  File "C:\Users\Ksawier\AppData\Local\Programs\Python\Python313\Lib\site-packages\fastapi\routing.py", line 150, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "C:\Users\Ksawier\AppData\Local\Programs\Python\Python313\Lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "C:\Users\Ksawier\AppData\Local\Programs\Python\Python313\Lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "C:\Users\Ksawier\AppData\Local\Programs\Python\Python313\Lib\site-packages\fastapi\routing.py", line 136, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "C:\Users\Ksawier\AppData\Local\Programs\Python\Python313\Lib\site-packages\fastapi\routing.py", line 690, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+    )
+    ^
+  File "C:\Users\Ksawier\AppData\Local\Programs\Python\Python313\Lib\site-packages\fastapi\routing.py", line 344, in run_endpoint_function
+    return await dependant.call(**values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Ksawier\Pictures\Screenshots\Projekty_autorskie\deepseek-proxy-clean\server.py", line 2100, in chat_completions
+    print(f"  [{m['role']}] {'id='+tid if tid else ''} content={len(c)} chars: {repr(c[:120])}", flush=True)
+    ~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Ksawier\Pictures\Screenshots\Projekty_autorskie\deepseek-proxy-clean\server.py", line 767, in write
+    self.terminal.write(message)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^
+  File "C:\Users\Ksawier\AppData\Local\Programs\Python\Python313\Lib\encodings\cp1250.py", line 19, in encode
+    return codecs.charmap_encode(input,self.errors,encoding_table)[0]
+           ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+UnicodeEncodeError: 'charmap' codec can't encode character '\u2192' in position 126: character maps to <undefined>
+
+[18:09:50] POST /v1/chat/completions
+Traceback (most recent call last):
+  File "C:\Users\Ksawier\Pictures\Screenshots\Projekty_autorskie\deepseek-proxy-clean\server.py", line 904, in _log_errors_middleware
+    response = await call_next(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Ksawier\AppData\Local\Programs\Python\Python313\Lib\site-packages\starlette\middleware\base.py", line 168, in call_next
+    raise app_exc from app_exc.__cause__ or app_exc.__context__
+  File "C:\Users\Ksawier\AppData\Local\Programs\Python\Python313\Lib\site-packages\starlette\middleware\base.py", line 144, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\Ksawier\AppData\Local\Programs\Python\Python313\Lib\site-packages\starlette\middleware\exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "C:\Users\Ksawier\AppData\Local\Programs\Python\Python313\Lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "C:\Users\Ksawier\AppData\Local\Programs\Python\Python313\Lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "C:\Users\Ksawier\AppData\Local\Programs\Python\Python313\Lib\site-packages\fastapi\middleware\asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "C:\Users\Ksawier\AppData\Local\Programs\Python\Python313\Lib\site-packages\starlette\routing.py", line 660, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "C:\Users\Ksawier\AppData\Local\Programs\Python\Python313\Lib\site-packages\fastapi\routing.py", line 2683, in app
+    await route.handle(scope, receive, send)
+  File "C:\Users\Ksawier\AppData\Local\Programs\Python\Python313\Lib\site-packages\fastapi\routing.py", line 1266, in handle
+    await super().handle(scope, receive, send)
+  File "C:\Users\Ksawier\AppData\Local\Programs\Python\Python313\Lib\site-packages\starlette\routing.py", line 276, in handle
+    await self.app(scope, receive, send)
+  File "C:\Users\Ksawier\AppData\Local\Programs\Python\Python313\Lib\site-packages\fastapi\routing.py", line 150, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "C:\Users\Ksawier\AppData\Local\Programs\Python\Python313\Lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "C:\Users\Ksawier\AppData\Local\Programs\Python\Python313\Lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "C:\Users\Ksawier\AppData\Local\Programs\Python\Python313\Lib\site-packages\fastapi\routing.py", line 136, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "C:\Users\Ksawier\AppData\Local\Programs\Python\Python313\Lib\site-packages\fastapi\routing.py", line 690, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+    )
+    ^
+  File "C:\Users\Ksawier\AppData\Local\Programs\Python\Python313\Lib\site-packages\fastapi\routing.py", line 344, in run_endpoint_function
+    return await dependant.call(**values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Ksawier\Pictures\Screenshots\Projekty_autorskie\deepseek-proxy-clean\server.py", line 2889, in chat_completions
+    new_pid = ds.ingest_chunk_fast(account_idx, chat_id, c_text, parent_message_id=current_parent, thinking_enabled=False)
+  File "C:\Users\Ksawier\Pictures\Screenshots\Projekty_autorskie\deepseek-proxy-clean\server.py", line 709, in ingest_chunk_fast
+    for _ in gen:
+             ^^^
+  File "C:\Users\Ksawier\Pictures\Screenshots\Projekty_autorskie\deepseek-proxy-clean\server.py", line 608, in _stream
+    yield from new_gen
+  File "C:\Users\Ksawier\Pictures\Screenshots\Projekty_autorskie\deepseek-proxy-clean\server.py", line 594, in _stream
+    raise RuntimeError(f"DeepSeek busy after {_retry+1} retries: {err_msg}")
+RuntimeError: DeepSeek busy after 2 retries: Server is busy. Try again later, or use Instant Mode.
+

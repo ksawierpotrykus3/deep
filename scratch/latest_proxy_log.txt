@@ -1,0 +1,250 @@
+84864: [RAW] {"updated_at":1786736344.039711}
+84865: [RAW] {"v":{"response":{"message_id":2,"parent_id":1,"model":"","role":"ASSISTANT","thinking_enabled":false,"ban_edit":false,"ban_regenerate":false,"status":"WIP","incomplete_message":null,"accumulated_toke
+84866: [FALLBACK] yielding 42 chars of pre-response text
+84867: [CHUNKED INGESTION] Chunk 1 ingested in 2.11s -> parent_id=2
+84868: [CHUNKED INGESTION] Ingesting chunk 2/6 (0 chars) with parent_id=2...
+84869: [POW] INVALID_POW_RESPONSE (attempt 1) â€“ clearing PoW cache and retrying...
+84870: [RETRY] Attempt 1 for session=1a76dcdd-f2d...
+84871: [POW] account=1 solved in 0.1s (difficulty=144000)
+84872: [WARN] No data lines from DeepSeek for session=1a76dcdd-f2db-4751-b125-e8ac85cdc1d0 parent=2
+84873: [STREAM] Incomplete — returning partial content (0 chars). Next RESUME will continue.
+84874: [TIMING] DS stream done, resp_id=None finished=False
+84875: [CHUNKED INGESTION] Warning: chunk 2 returned None parent_id
+84876: [CHUNKED INGESTION] Ingesting chunk 3/6 (49837 chars) with parent_id=2...
+84877: [POW] prefetched for account=1 (expires in 283s)
+84878: [POW] INVALID_POW_RESPONSE (attempt 1) â€“ clearing PoW cache and retrying...
+84879: [RETRY] Attempt 1 for session=1a76dcdd-f2d...
+84880: [POW] account=1 solved in 0.0s (difficulty=144000)
+84881: [POW] prefetched for account=1 (expires in 283s)
+84882: [RAW] {"request_message_id":3,"response_message_id":4,"model_type":"expert"}
+84883: [RAW] {"updated_at":1786736348.131665}
+84884: [RAW] {"v":{"response":{"message_id":4,"parent_id":3,"model":"","role":"ASSISTANT","thinking_enabled":false,"ban_edit":false,"ban_regenerate":false,"status":"WIP","incomplete_message":null,"accumulated_toke
+84885: [FALLBACK] yielding 160 chars of pre-response text
+84886: [CHUNKED INGESTION] Chunk 3 ingested in 3.54s -> parent_id=4
+84887: [CHUNKED INGESTION] Ingesting chunk 4/6 (5776 chars) with parent_id=4...
+84888: [RAW] {"request_message_id":5,"response_message_id":6,"model_type":"expert"}
+84889: [RAW] {"updated_at":1786736351.14781}
+84890: [RAW] {"v":{"response":{"message_id":6,"parent_id":5,"model":"","role":"ASSISTANT","thinking_enabled":false,"ban_edit":false,"ban_regenerate":false,"status":"WIP","incomplete_message":null,"accumulated_toke
+84891: [FALLBACK] yielding 732 chars of pre-response text
+84892: [CHUNKED INGESTION] Chunk 4 ingested in 5.88s -> parent_id=6
+84893: [CHUNKED INGESTION] Ingesting chunk 5/6 (20126 chars) with parent_id=6...
+84894: [POW] INVALID_POW_RESPONSE (attempt 1) â€“ clearing PoW cache and retrying...
+84895: [RETRY] Attempt 1 for session=1a76dcdd-f2d...
+84896: [POW] account=1 solved in 0.0s (difficulty=144000)
+84897: [POW] prefetched for account=1 (expires in 283s)
+84898: [RAW] {"request_message_id":7,"response_message_id":8,"model_type":"expert"}
+84899: [RAW] {"updated_at":1786736357.7490969}
+84900: [RAW] {"v":{"response":{"message_id":8,"parent_id":7,"model":"","role":"ASSISTANT","thinking_enabled":false,"ban_edit":false,"ban_regenerate":false,"status":"WIP","incomplete_message":null,"accumulated_toke
+84901: [FALLBACK] yielding 728 chars of pre-response text
+84902: [CHUNKED INGESTION] Chunk 5 ingested in 5.85s -> parent_id=8
+84903: [CHUNKED INGESTION] Ingestion complete. Final chunk 6 (41215 chars) ready for stream (parent_id=8)
+84904: [TIMING] Stream ready (19.8s, resp_id=10)
+84905: [32mINFO[0m:     fdbd:dc53:21:348::41:0 - "[1mPOST /v1/chat/completions HTTP/1.1[0m" [32m200 OK[0m
+84906: [RAW] {"request_message_id":9,"response_message_id":10,"model_type":"expert"}
+84907: [RAW] {"updated_at":1786736365.166399}
+84908: [RAW] {"v":{"response":{"message_id":10,"parent_id":9,"model":"","role":"ASSISTANT","thinking_enabled":true,"ban_edit":false,"ban_regenerate":false,"status":"WIP","incomplete_message":null,"accumulated_toke
+84909: [YIELD] text from delta: 'Pop'
+84910: [YIELD] text from delta: 'r'
+84911: [YIELD] text from delta: 'zed'
+84912: [YIELD] text from delta: 'ni'
+84913: [YIELD] text from delta: ' sub'
+84914: [YIELD] text from delta: 'agent'
+84915: [YIELD] text from delta: ' orchestr'
+84916: [YIELD] text from delta: 'ator'
+84917: [YIELD] text from delta: 'a'
+84918: [YIELD] text from delta: ' zw'
+84919: [YIELD] text from delta: 'róci'
+84920: [YIELD] text from delta: 'ł'
+84921: [YIELD] text from delta: ' pust'
+84922: [YIELD] text from delta: 'y'
+84923: [YIELD] text from delta: ' wynik'
+84924: [YIELD] text from delta: ','
+84925: [YIELD] text from delta: ' więc'
+84926: [YIELD] text from delta: ' mus'
+84927: [YIELD] text from delta: 'zę'
+84928: [YIELD] text from delta: ' zw'
+84929: [YIELD] text from delta: 'ery'
+84930: [YIELD] text from delta: 'fik'
+84931: [YIELD] text from delta: 'ować'
+84932: [YIELD] text from delta: ','
+84933: [YIELD] text from delta: ' czy'
+84934: [YIELD] text from delta: ' ed'
+84935: [YIELD] text from delta: 'yc'
+84936: [YIELD] text from delta: 'je'
+84937: [YIELD] text from delta: ' fak'
+84938: [YIELD] text from delta: 'ty'
+84939: [YIELD] text from delta: 'cznie'
+84940: [YIELD] text from delta: ' w'
+84941: [YIELD] text from delta: 'esz'
+84942: [YIELD] text from delta: 'ły'
+84943: [YIELD] text from delta: '.'
+84944: [YIELD] text from delta: ' Sp'
+84945: [YIELD] text from delta: 'raw'
+84946: [YIELD] text from delta: 'dz'
+84947: [YIELD] text from delta: 'am'
+84948: [YIELD] text from delta: ' kom'
+84949: [YIELD] text from delta: 'pil'
+84950: [YIELD] text from delta: 'ację'
+84951: [YIELD] text from delta: ' i'
+84952: [YIELD] text from delta: ' kl'
+84953: [YIELD] text from delta: 'uc'
+84954: [YIELD] text from delta: 'z'
+84955: [YIELD] text from delta: 'owe'
+84956: [YIELD] text from delta: ' znac'
+84957: [YIELD] text from delta: 'zn'
+84958: [YIELD] text from delta: 'iki'
+84959: [YIELD] text from delta: '.\n\n'
+84960: [TIMING] DS stream done, resp_id=10 finished=True
+84961: [TIMING] Stream done (34.9s, 0 tools, wm=875445ebfb21...)
+84962: [RAW REQUEST BODY]
+84963:   fields: ['model', 'max_tokens', 'stream', 'tools', 'messages']
+84964:   model: "- deepseek-v4-pro - "
+84965:   max_tokens: 16000
+84966:   stream: True
+84967:   tools: 21 items
+84968:     - Task: params=['description', 'query', 'subagent_type', 'response_language']
+84969:     - Skill: params=['name']
+84970:     - SearchCodebase: params=['information_request', 'target_directories']
+84971:     - Glob: params=['pattern', 'path']
+84972:     - LS: params=['path', 'ignore']
+84973:     - Grep: params=['pattern', 'path', 'glob', 'output_mode', '-B', '-A', '-C', '-n', '-i', 'type', 'head_limit', 'offset', 'multiline']
+84974:     - Read: params=['file_path', 'offset', 'limit']
+84975:     - RunCommand: params=['cwd', 'command', 'target_terminal', 'command_type', 'blocking', 'wait_ms_before_async', 'requires_approval']
+84976:     - CheckCommandStatus: params=['command_id', 'wait_ms_before_check', 'output_character_count', 'skip_character_count', 'output_priority', 'filter']
+84977:     - StopCommand: params=['command_id']
+84978:     - DeleteFile: params=['file_paths']
+84979:     - SearchReplace: params=['file_path', 'old_str', 'new_str']
+84980:     - Write: params=['file_path', 'content']
+84981:     - AskUserQuestion: params=['questions']
+84982:     - NotifyUser: params=['explanation', 'file_paths']
+84983:     - WebSearch: params=['query', 'num', 'lr']
+84984:     - WebFetch: params=['url']
+84985:     - GetDiagnostics: params=['uri']
+84986:     - TodoWrite: params=['todos', 'merge', 'summary']
+84987:     - OpenPreview: params=['preview_url', 'command_id']
+84988:     - run_mcp: params=['server_name', 'tool_name', 'args']
+84989:   messages: 16 items
+84990: [ACL TOKEN] payload keys: ['aud', 'exp', 'iat', 'iss', 'legid', 'sub']
+84991: [ACL TOKEN] sub: spiffe://prod-row.byted.org/ns:tce/r:singapore-central/vdc:my/id:flow.ide.copilot
+84992: [ACL TOKEN] legid: {'authority': 'TCE', 'expireTime': 1786798498, 'extension': {'cluster_name': 'kitex_ide', 'idc': 'MY', 'logical_cluster': 'default', 'physical_cluster': 'Fed01', 'service_type': 'app_engine', 'zone': 
+84993: [REQUEST] roles={'tool', 'user', 'assistant', 'system'} tools=3 msgs=16
+84994: [CONV_KEY] watermark found: 875445ebfb21...
+84995: [CONV_KEY] legid={'authority': 'TCE', 'expireTime': 1786798498, 'extension': {'cluster_name': 'kitex_ide', 'idc': 'MY', 'logical_cluster': 'default', 'physical_cluster': 'Fed01', 'service_type': 'app_engine', 'zone': 'Singapore-Central'}, 'primaryAuthType': 'psm', 'psm': 'flow.ide.copilot', 'user': 'caoyunxiang', 'version': 0} conv_key=wm_875445ebfb21415a822b691fe0104f77
+84996:   [tool] id=call_Tjk8a5nRzanPIWO2r7a8ETzN content=2564 chars: '<toolcall_status>done</toolcall_status>\n<toolcall_result>\nZadanie ukończone. Oto raport zmian.\n\n## A) `src\\watcher.py`\n\n'
+84997:   [tool] id=call_UwNjev1zjwnSsoAJssbAgcLl content=131 chars: '<toolcall_status>done</toolcall_status>\n<toolcall_result>\n\n\n\n<!-- PROXY_SID:7fd7d066d6be4f3da59b0e002a404f9d-->\n</toolca'
+84998:   [tool] id=call_Dtf4BAGNa2pLiZxTYNyCFT7e content=4054 chars: '<toolcall_status>done</toolcall_status>\n<toolcall_result>\nystkie poprawki weszły. Podsumowanie zmian i listy miejsc niez'
+84999:   [user]  content=4 chars: [{'type': 'text', 'text': '\n<system-reminder>\n\nThe maximum number of terminals is 5, and 0 have been created:\n<available_terminal>\nNo available terminals. Running command will automatically create a new terminal.\n</available_terminal>\n\nNote:\n- idle refers to whether the current terminal is idle. false means that a command is running on the current terminal.\n- If you run a command in a terminal with a non-idle terminal, the running command will be killed.\n- If you want to create a new terminal, its shell type is powershell5, cwd is c:\\Users\\Ksawier\\Pictures\\Screenshots\\Projekty_autorskie.\n\n</system-reminder>\n\n'}, {'type': 'text', 'text': "\n<system-reminder>\n\n# Response Language Settings\nYou MUST follow these language requirements when responding to the user:\n- Always use the same language as the user's latest message unless user explicitly asks.\n- For code comments, follow the same language rule unless explicitly instructed otherwise\n- Maintain consistency in language throughout the conversation\n\n</system-reminder>\n\n"}, {'type': 'text', 'text': '<system-reminder>\nYou are now in Default mode. Any instructions for other modes (e.g. Plan mode) are no Longer active.\n</system-reminder>\n'}, {'type': 'text', 'text': '\n<user_input>\nkontynuuj\n</user_input>\n\n'}]
+85000: [DEBUG] state: parent_id=10 msgs_len=14 req_len=16 resume_cond=parent_is_not_none len_ok
+85001: [ROUTER] Model '- deepseek-v4-pro - ' -> model_type='expert', thinking=True, search=False
+85002: [ACCOUNT] conv_key=wm_875445ebfb21415a822b6... account_idx=1
+85003: [DEBUG] _ensure_slot(slot=1) called, current in_progress=False
+85004: [DEBUG] ap.is_valid(1) = True, slots[1] = Session(auth_token='dzq4pFC5OAQ1xpATu2kYJACsFjoylHlmN1BNdCyTqhQ3aDVeWY48J2iS0ApcCq//', cookies={'.thumbcache_6b2e5483f9d858d7c661c5e276b6a6ae': 'gM5fzuctcmMYkUM7xQ5Dxwq7SbSLt7+WVqUlF8fJ90Xp5eAjF58VLogp2Ns/zEX7fr0EilColJTNTUDkZB19Iw%3D%3D', 'smidV2': '202607021944259d7fe75c9b09c6362994eae51e363f2f00e35fa25aad7fb40', 'aws-waf-token': '49f0dbf9-82f3-4d8d-aa27-a5b7eb2debbb:CgoAkep8d3QEAAAA:E5DG2K3kr4s9+hHNqnBObQ3Qoun3OpEfCMJIQ8b/Jyz3bcVLMTctN3xRDYP8GJN2MtK79EuVipx36rqw4COBSQ6BWrTLHrFcFyIY+eHeHUsz4MbWP1gfVNPUi2FnKFA1Iv8bF+SMJZ85eIbCGhW5wGqQOQ5sLWPsJimTzVFHMVPMqKpel2FG1NjhAk4mMRg=', 'ds_session_id': 'd577a4ff6f674c7883007b28e5d50700'}, user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36', created_at=1783014300.860996, last_validated_at=1783014300.860996)
+85005: [HYBRID] Using web chat (resume, msgs=16)
+85006: [RESUME] ds_session=1a76dcdd-f2db-4751-b125-e8ac85cdc1d0 account=1 parent=10 skip=14 send=2 new msgs (tools stripped)
+85007: [TIMING] PoW+solve+stream setup...
+85008: [POW] INVALID_POW_RESPONSE (attempt 1) â€“ clearing PoW cache and retrying...
+85009: [RETRY] Attempt 1 for session=1a76dcdd-f2d...
+85010: [POW] account=1 solved in 0.0s (difficulty=144000)
+85011: [TIMING] Stream ready (1.3s, resp_id=12)
+85012: [32mINFO[0m:     fdbd:dc53:2:97::22:0 - "[1mPOST /v1/chat/completions HTTP/1.1[0m" [32m200 OK[0m
+85013: [RAW] {"request_message_id":11,"response_message_id":12,"model_type":"expert"}
+85014: [POW] prefetched for account=1 (expires in 283s)
+85015: [RAW] {"updated_at":1786736395.166596}
+85016: [RAW] {"v":{"response":{"message_id":12,"parent_id":11,"model":"","role":"ASSISTANT","thinking_enabled":true,"ban_edit":false,"ban_regenerate":false,"status":"WIP","incomplete_message":null,"accumulated_tok
+85017: [YIELD] text from delta: 'K'
+85018: [YIELD] text from delta: 'ont'
+85019: [YIELD] text from delta: 'yn'
+85020: [YIELD] text from delta: 'u'
+85021: [YIELD] text from delta: 'uj'
+85022: [YIELD] text from delta: 'ę'
+85023: [YIELD] text from delta: ' —'
+85024: [YIELD] text from delta: ' w'
+85025: [YIELD] text from delta: 'ery'
+85026: [YIELD] text from delta: 'fik'
+85027: [YIELD] text from delta: 'uj'
+85028: [YIELD] text from delta: 'ę'
+85029: [YIELD] text from delta: ','
+85030: [YIELD] text from delta: ' czy'
+85031: [YIELD] text from delta: ' ed'
+85032: [YIELD] text from delta: 'yc'
+85033: [YIELD] text from delta: 'je'
+85034: [YIELD] text from delta: ' orchestr'
+85035: [YIELD] text from delta: 'ator'
+85036: [YIELD] text from delta: 'a'
+85037: [YIELD] text from delta: ' fak'
+85038: [YIELD] text from delta: 'ty'
+85039: [YIELD] text from delta: 'cznie'
+85040: [YIELD] text from delta: ' w'
+85041: [YIELD] text from delta: 'esz'
+85042: [YIELD] text from delta: 'ły'
+85043: [YIELD] text from delta: '.\n\n'
+85044: [TIMING] DS stream done, resp_id=12 finished=True
+85045: [TIMING] Stream done (8.2s, 0 tools, wm=875445ebfb21...)
+85046: [RAW REQUEST BODY]
+85047:   fields: ['model', 'max_tokens', 'stream', 'tools', 'messages']
+85048:   model: "- deepseek-v4-pro - "
+85049:   max_tokens: 16000
+85050:   stream: True
+85051:   tools: 21 items
+85052:     - Task: params=['description', 'query', 'subagent_type', 'response_language']
+85053:     - Skill: params=['name']
+85054:     - SearchCodebase: params=['information_request', 'target_directories']
+85055:     - Glob: params=['pattern', 'path']
+85056:     - LS: params=['path', 'ignore']
+85057:     - Grep: params=['pattern', 'path', 'glob', 'output_mode', '-B', '-A', '-C', '-n', '-i', 'type', 'head_limit', 'offset', 'multiline']
+85058:     - Read: params=['file_path', 'offset', 'limit']
+85059:     - RunCommand: params=['cwd', 'command', 'target_terminal', 'command_type', 'blocking', 'wait_ms_before_async', 'requires_approval']
+85060:     - CheckCommandStatus: params=['command_id', 'wait_ms_before_check', 'output_character_count', 'skip_character_count', 'output_priority', 'filter']
+85061:     - StopCommand: params=['command_id']
+85062:     - DeleteFile: params=['file_paths']
+85063:     - SearchReplace: params=['file_path', 'old_str', 'new_str']
+85064:     - Write: params=['file_path', 'content']
+85065:     - AskUserQuestion: params=['questions']
+85066:     - NotifyUser: params=['explanation', 'file_paths']
+85067:     - WebSearch: params=['query', 'num', 'lr']
+85068:     - WebFetch: params=['url']
+85069:     - GetDiagnostics: params=['uri']
+85070:     - TodoWrite: params=['todos', 'merge', 'summary']
+85071:     - OpenPreview: params=['preview_url', 'command_id']
+85072:     - run_mcp: params=['server_name', 'tool_name', 'args']
+85073:   messages: 18 items
+85074: [ACL TOKEN] payload keys: ['aud', 'exp', 'iat', 'iss', 'legid', 'sub']
+85075: [ACL TOKEN] sub: spiffe://prod-row.byted.org/ns:tce/r:singapore-central/vdc:my/id:flow.ide.copilot
+85076: [ACL TOKEN] legid: {'authority': 'TCE', 'expireTime': 1786798553, 'extension': {'cluster_name': 'kitex_ide', 'idc': 'MY', 'logical_cluster': 'default', 'physical_cluster': 'Fed02', 'service_type': 'app_engine', 'zone': 
+85077: [REQUEST] roles={'tool', 'user', 'assistant', 'system'} tools=3 msgs=18
+85078: [CONV_KEY] watermark found: 875445ebfb21...
+85079: [CONV_KEY] legid={'authority': 'TCE', 'expireTime': 1786798553, 'extension': {'cluster_name': 'kitex_ide', 'idc': 'MY', 'logical_cluster': 'default', 'physical_cluster': 'Fed02', 'service_type': 'app_engine', 'zone': 'Singapore-Central'}, 'primaryAuthType': 'psm', 'psm': 'flow.ide.copilot', 'user': 'caoyunxiang', 'version': 0} conv_key=wm_875445ebfb21415a822b691fe0104f77
+85080:   [tool] id=call_Dtf4BAGNa2pLiZxTYNyCFT7e content=4054 chars: '<toolcall_status>done</toolcall_status>\n<toolcall_result>\nystkie poprawki weszły. Podsumowanie zmian i listy miejsc niez'
+85081:   [user]  content=4 chars: [{'type': 'text', 'text': '\n<system-reminder>\n\nThe maximum number of terminals is 5, and 0 have been created:\n<available_terminal>\nNo available terminals. Running command will automatically create a new terminal.\n</available_terminal>\n\nNote:\n- idle refers to whether the current terminal is idle. false means that a command is running on the current terminal.\n- If you run a command in a terminal with a non-idle terminal, the running command will be killed.\n- If you want to create a new terminal, its shell type is powershell5, cwd is c:\\Users\\Ksawier\\Pictures\\Screenshots\\Projekty_autorskie.\n\n</system-reminder>\n\n'}, {'type': 'text', 'text': "\n<system-reminder>\n\n# Response Language Settings\nYou MUST follow these language requirements when responding to the user:\n- Always use the same language as the user's latest message unless user explicitly asks.\n- For code comments, follow the same language rule unless explicitly instructed otherwise\n- Maintain consistency in language throughout the conversation\n\n</system-reminder>\n\n"}, {'type': 'text', 'text': '<system-reminder>\nYou are now in Default mode. Any instructions for other modes (e.g. Plan mode) are no Longer active.\n</system-reminder>\n'}, {'type': 'text', 'text': '\n<user_input>\nkontynuuj\n</user_input>\n\n'}]
+85082:   [user]  content=4 chars: [{'type': 'text', 'text': '\n<system-reminder>\n\nThe maximum number of terminals is 5, and 0 have been created:\n<available_terminal>\nNo available terminals. Running command will automatically create a new terminal.\n</available_terminal>\n\nNote:\n- idle refers to whether the current terminal is idle. false means that a command is running on the current terminal.\n- If you run a command in a terminal with a non-idle terminal, the running command will be killed.\n- If you want to create a new terminal, its shell type is powershell5, cwd is c:\\Users\\Ksawier\\Pictures\\Screenshots\\Projekty_autorskie.\n\n</system-reminder>\n\n'}, {'type': 'text', 'text': "\n<system-reminder>\n\n# Response Language Settings\nYou MUST follow these language requirements when responding to the user:\n- Always use the same language as the user's latest message unless user explicitly asks.\n- For code comments, follow the same language rule unless explicitly instructed otherwise\n- Maintain consistency in language throughout the conversation\n\n</system-reminder>\n\n"}, {'type': 'text', 'text': '<system-reminder>\nYou are now in Default mode. Any instructions for other modes (e.g. Plan mode) are no Longer active.\n</system-reminder>\n'}, {'type': 'text', 'text': '\n<user_input>\nkontynuuj\n</user_input>\n\n'}]
+85083: [DEBUG] state: parent_id=12 msgs_len=16 req_len=18 resume_cond=parent_is_not_none len_ok
+85084: [ROUTER] Model '- deepseek-v4-pro - ' -> model_type='expert', thinking=True, search=False
+85085: [ACCOUNT] conv_key=wm_875445ebfb21415a822b6... account_idx=1
+85086: [DEBUG] _ensure_slot(slot=1) called, current in_progress=False
+85087: [DEBUG] ap.is_valid(1) = True, slots[1] = Session(auth_token='dzq4pFC5OAQ1xpATu2kYJACsFjoylHlmN1BNdCyTqhQ3aDVeWY48J2iS0ApcCq//', cookies={'.thumbcache_6b2e5483f9d858d7c661c5e276b6a6ae': 'gM5fzuctcmMYkUM7xQ5Dxwq7SbSLt7+WVqUlF8fJ90Xp5eAjF58VLogp2Ns/zEX7fr0EilColJTNTUDkZB19Iw%3D%3D', 'smidV2': '202607021944259d7fe75c9b09c6362994eae51e363f2f00e35fa25aad7fb40', 'aws-waf-token': '49f0dbf9-82f3-4d8d-aa27-a5b7eb2debbb:CgoAkep8d3QEAAAA:E5DG2K3kr4s9+hHNqnBObQ3Qoun3OpEfCMJIQ8b/Jyz3bcVLMTctN3xRDYP8GJN2MtK79EuVipx36rqw4COBSQ6BWrTLHrFcFyIY+eHeHUsz4MbWP1gfVNPUi2FnKFA1Iv8bF+SMJZ85eIbCGhW5wGqQOQ5sLWPsJimTzVFHMVPMqKpel2FG1NjhAk4mMRg=', 'ds_session_id': 'd577a4ff6f674c7883007b28e5d50700'}, user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36', created_at=1783014300.860996, last_validated_at=1783014300.860996)
+85088: [HYBRID] Using web chat (resume, msgs=18)
+85089: [RESUME] ds_session=1a76dcdd-f2db-4751-b125-e8ac85cdc1d0 account=1 parent=12 skip=16 send=2 new msgs (tools stripped)
+85090: [TIMING] PoW+solve+stream setup...
+85091: [TIMING] Stream ready (0.4s, resp_id=14)
+85092: [32mINFO[0m:     fdbd:dc53:25:114::51:0 - "[1mPOST /v1/chat/completions HTTP/1.1[0m" [32m200 OK[0m
+85093: [RAW] {"request_message_id":13,"response_message_id":14,"model_type":"expert"}
+85094: [RAW] {"updated_at":1786736423.190868}
+85095: [RAW] {"v":{"response":{"message_id":14,"parent_id":13,"model":"","role":"ASSISTANT","thinking_enabled":true,"ban_edit":false,"ban_regenerate":false,"status":"WIP","incomplete_message":null,"accumulated_tok
+85096: [YIELD] text from delta: 'W'
+85097: [YIELD] text from delta: 'yk'
+85098: [YIELD] text from delta: 'on'
+85099: [YIELD] text from delta: 'uj'
+85100: [YIELD] text from delta: 'ę'
+85101: [YIELD] text from delta: ' w'
+85102: [YIELD] text from delta: 'ery'
+85103: [YIELD] text from delta: 'fik'
+85104: [YIELD] text from delta: 'ację'
+85105: [YIELD] text from delta: ' bez'
+85106: [YIELD] text from delta: 'po'
+85107: [YIELD] text from delta: 'ś'
+85108: [YIELD] text from delta: 'red'
+85109: [YIELD] text from delta: 'nio'
+85110: [YIELD] text from delta: '.\n\n'
+85111: [TIMING] DS stream done, resp_id=14 finished=True
+85112: [TIMING] Stream done (5.2s, 0 tools, wm=875445ebfb21...)
+85113: 

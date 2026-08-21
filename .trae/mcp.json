@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "gemini-oracle": {
+      "command": "python",
+      "args": [
+        "-m",
+        "gemini_proxy.mcp_server"
+      ],
+      "cwd": "c:\\Users\\Ksawier\\Pictures\\Screenshots\\Projekty_autorskie\\deepseek-proxy-clean"
+    }
+  }
+}

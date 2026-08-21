@@ -1,0 +1,4 @@
+{
+  "summary": "Test sprawdzający czy znaki < i zwykłe tagi (np. vector<int>, a < b) nie są połykane przez generator strumieniowy.",
+  "updatedAt": "2026-08-14T11:06:06.628619700Z"
+}

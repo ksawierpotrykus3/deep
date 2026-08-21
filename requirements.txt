@@ -1,0 +1,6 @@
+curl_cffi>=0.6.0
+fastapi>=0.110.0
+uvicorn>=0.29.0
+pydantic>=2.0.0
+wasmtime>=14.0.0
+DrissionPage>=4.0.0

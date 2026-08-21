@@ -1,0 +1,400 @@
+65866: [32mINFO[0m:     Uvicorn running on [1mhttp://0.0.0.0:4570[0m (Press CTRL+C to quit)
+65867: [RAW REQUEST BODY]
+65868:   fields: ['model', 'max_tokens', 'stream', 'tools', 'messages']
+65869:   model: "deepseek-v4-flash"
+65870:   max_tokens: 16000
+65871:   stream: True
+65872:   tools: 21 items
+65873:     - Task: params=['description', 'query', 'subagent_type', 'response_language']
+65874:     - Skill: params=['name']
+65875:     - SearchCodebase: params=['information_request', 'target_directories']
+65876:     - Glob: params=['pattern', 'path']
+65877:     - LS: params=['path', 'ignore']
+65878:     - Grep: params=['pattern', 'path', 'glob', 'output_mode', '-B', '-A', '-C', '-n', '-i', 'type', 'head_limit', 'offset', 'multiline']
+65879:     - Read: params=['file_path', 'offset', 'limit']
+65880:     - RunCommand: params=['cwd', 'command', 'target_terminal', 'command_type', 'blocking', 'wait_ms_before_async', 'requires_approval']
+65881:     - CheckCommandStatus: params=['command_id', 'wait_ms_before_check', 'output_character_count', 'skip_character_count', 'output_priority', 'filter']
+65882:     - StopCommand: params=['command_id']
+65883:     - DeleteFile: params=['file_paths']
+65884:     - SearchReplace: params=['file_path', 'old_str', 'new_str']
+65885:     - Write: params=['file_path', 'content']
+65886:     - AskUserQuestion: params=['questions']
+65887:     - NotifyUser: params=['explanation', 'file_paths']
+65888:     - WebSearch: params=['query', 'num', 'lr']
+65889:     - WebFetch: params=['url']
+65890:     - GetDiagnostics: params=['uri']
+65891:     - TodoWrite: params=['todos', 'merge', 'summary']
+65892:     - OpenPreview: params=['preview_url', 'command_id']
+65893:     - run_mcp: params=['server_name', 'tool_name', 'args']
+65894:   messages: 13 items
+65895: [ACL TOKEN] payload keys: ['aud', 'exp', 'iat', 'iss', 'legid', 'sub']
+65896: [ACL TOKEN] sub: spiffe://prod-row.byted.org/ns:tce/r:singapore-central/vdc:my/id:flow.ide.copilot
+65897: [ACL TOKEN] legid: {'authority': 'TCE', 'expireTime': 1786798553, 'extension': {'cluster_name': 'kitex_ide', 'idc': 'MY', 'logical_cluster': 'default', 'physical_cluster': 'Fed02', 'service_type': 'app_engine', 'zone': 
+65898: [REQUEST] roles={'assistant', 'user', 'tool', 'system'} tools=3 msgs=13
+65899: [CONV_KEY] legid={'authority': 'TCE', 'expireTime': 1786798553, 'extension': {'cluster_name': 'kitex_ide', 'idc': 'MY', 'logical_cluster': 'default', 'physical_cluster': 'Fed02', 'service_type': 'app_engine', 'zone': 'Singapore-Central'}, 'primaryAuthType': 'psm', 'psm': 'flow.ide.copilot', 'user': 'caoyunxiang', 'version': 0} conv_key=jwt_leg_{'authority': 'TCE', 'expireTime': 1786798553, 'extension': {'cluster_name': 'kitex_ide', 'idc': 'MY', 'logical_cluster': 'default', 'physical_cluster': 'Fed02', 'service_type': 'app_engine', 'zone': 'Singapore-Central'}, 'primaryAuthType': 'psm', 'psm': 'flow.ide.copilot', 'user': 'caoyunxiang', 'version': 0}_5d3e4663
+65900:   [tool] id=call_sP9DDxFrS9nnXfpzlRKSpx0Q content=5321 chars: '<toolcall_status>done</toolcall_status>\n<toolcall_result>\n  1→"""Nasłuch folderu zrzutów ekranu i OCR do ofert (BAT 1).\n'
+65901:   [tool] id=call_k1iD09ecHizYQnTzMfVudC9Z content=2839 chars: '<toolcall_status>done</toolcall_status>\n<toolcall_result>\n 1→"""Runner dry runa (BAT 2): lista ofert + wybór numerkiem ('
+65902:   [tool] id=call_ajP1UpUWm6Wh6OE0shvsl84f content=34005 chars: '<toolcall_status>done</toolcall_status>\n<toolcall_result>\n  1→"""Orchestrator Fazy 1 dry runa.\n  2→\n  3→Czysty, „głupi" '
+65903:   [user]  content=4 chars: [{'type': 'text', 'text': '\n<system-reminder>\n\nThe maximum number of terminals is 5, and 0 have been created:\n<available_terminal>\nNo available terminals. Running command will automatically create a new terminal.\n</available_terminal>\n\nNote:\n- idle refers to whether the current terminal is idle. false means that a command is running on the current terminal.\n- If you run a command in a terminal with a non-idle terminal, the running command will be killed.\n- If you want to create a new terminal, its shell type is powershell5, cwd is c:\\Users\\Ksawier\\Pictures\\Screenshots\\Projekty_autorskie.\n\n</system-reminder>\n\n'}, {'type': 'text', 'text': "\n<system-reminder>\n\n# Response Language Settings\nYou MUST follow these language requirements when responding to the user:\n- Always use the same language as the user's latest message unless user explicitly asks.\n- For code comments, follow the same language rule unless explicitly instructed otherwise\n- Maintain consistency in language throughout the conversation\n\n</system-reminder>\n\n"}, {'type': 'text', 'text': '<system-reminder>\nYou are now in Default mode. Any instructions for other modes (e.g. Plan mode) are no Longer active.\n</system-reminder>\n'}, {'type': 'text', 'text': '\n<user_input>\nkontynuj\n</user_input>\n\n'}]
+65904: [DEBUG] no state for conv_key=jwt_leg_{'authority': 'T...
+65905: [ROUTER] Model 'deepseek-v4-flash' -> model_type='default', thinking=True, search=False
+65906: [ACCOUNT] conv_key=jwt_leg_{'authority': 'T... account_idx=1
+65907: [DEBUG] _ensure_slot(slot=1) called, current in_progress=False
+65908: [DEBUG] ap.is_valid(1) = True, slots[1] = Session(auth_token='dzq4pFC5OAQ1xpATu2kYJACsFjoylHlmN1BNdCyTqhQ3aDVeWY48J2iS0ApcCq//', cookies={'.thumbcache_6b2e5483f9d858d7c661c5e276b6a6ae': 'gM5fzuctcmMYkUM7xQ5Dxwq7SbSLt7+WVqUlF8fJ90Xp5eAjF58VLogp2Ns/zEX7fr0EilColJTNTUDkZB19Iw%3D%3D', 'smidV2': '202607021944259d7fe75c9b09c6362994eae51e363f2f00e35fa25aad7fb40', 'aws-waf-token': '49f0dbf9-82f3-4d8d-aa27-a5b7eb2debbb:CgoAkep8d3QEAAAA:E5DG2K3kr4s9+hHNqnBObQ3Qoun3OpEfCMJIQ8b/Jyz3bcVLMTctN3xRDYP8GJN2MtK79EuVipx36rqw4COBSQ6BWrTLHrFcFyIY+eHeHUsz4MbWP1gfVNPUi2FnKFA1Iv8bF+SMJZ85eIbCGhW5wGqQOQ5sLWPsJimTzVFHMVPMqKpel2FG1NjhAk4mMRg=', 'ds_session_id': 'd577a4ff6f674c7883007b28e5d50700'}, user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36', created_at=1783014300.860996, last_validated_at=1783014300.860996)
+65909: [HYBRID] Using web chat (mode=free_first, msgs=13)
+65910: [TOOLS] 21 tool schemas
+65911:   - Task
+65912:   - Skill
+65913:   - SearchCodebase
+65914:   - Glob
+65915:   - LS
+65916:   - Grep
+65917:   - Read
+65918:   - RunCommand
+65919:   - CheckCommandStatus
+65920:   - StopCommand
+65921:   - DeleteFile
+65922:   - SearchReplace
+65923:   - Write
+65924:   - AskUserQuestion
+65925:   - NotifyUser
+65926:   - WebSearch
+65927:   - WebFetch
+65928:   - GetDiagnostics
+65929:   - TodoWrite
+65930:   - OpenPreview
+65931:   - run_mcp
+65932: [CREATE SESSION] account=1 status=200 response={"code": 0, "msg": "", "data": {"biz_code": 0, "biz_msg": "", "biz_data": {"chat_session": {"id": "d1711c33-72df-4efd-8c21-fc7290cd488c", "seq_id": 208902788, "agent": "chat", "model_type": "default", "title": null, "title_type": "WIP", "version": 0, "current_message_id": null, "pinned": false, "inserted_at": 1786739588.705, "updated_at": 1786739588.705}, "ttl_seconds": 259200}}}
+65933: [MAIN] Mode=free_first — prepended prompt (+744 chars). Total: 14681 chars
+65934: [GOALS] Extracted goals from 13 msgs, injecting into prompt
+65935: [CONV] Pruned 2 old entries, keeping 25
+65936: [NEW SESSION] account=1 d1711c33-72df-4efd-8c21-fc7290cd488c prompt=111141 chars msgs=13 (0.5s)
+65937: [TIMING] PoW+solve+stream setup...
+65938: [CHUNKED INGESTION] Prompt (111141 chars) > 50000 -> split into 3 chunks for session d1711c33-72df-4efd-8c21-fc7290cd488c
+65939: [CHUNKED INGESTION] Ingesting chunk 1/3 (35346 chars) with parent_id=None...
+65940: [POW] account=1 solved in 0.0s (difficulty=144000)
+65941: [POW] prefetched for account=1 (expires in 283s)
+65942: [RAW] {"request_message_id":1,"response_message_id":2,"model_type":"expert"}
+65943: [RAW] {"updated_at":1786739591.536383}
+65944: [RAW] {"v":{"response":{"message_id":2,"parent_id":1,"model":"","role":"ASSISTANT","thinking_enabled":false,"ban_edit":false,"ban_regenerate":false,"status":"WIP","incomplete_message":null,"accumulated_toke
+65945: [FALLBACK] yielding 163 chars of pre-response text
+65946: [CHUNKED INGESTION] Chunk 1 ingested in 3.35s -> parent_id=2
+65947: [CHUNKED INGESTION] Ingesting chunk 2/3 (34088 chars) with parent_id=2...
+65948: [RAW] {"request_message_id":3,"response_message_id":4,"model_type":"expert"}
+65949: [RAW] {"updated_at":1786739594.200332}
+65950: [RAW] {"v":{"response":{"message_id":4,"parent_id":3,"model":"","role":"ASSISTANT","thinking_enabled":false,"ban_edit":false,"ban_regenerate":false,"status":"WIP","incomplete_message":null,"accumulated_toke
+65951: [FALLBACK] yielding 4613 chars of pre-response text
+65952: [CHUNKED INGESTION] Chunk 2 ingested in 20.33s -> parent_id=4
+65953: [CHUNKED INGESTION] Ingestion complete. Final chunk 3 (41721 chars) ready for stream (parent_id=4)
+65954: [POW] INVALID_POW_RESPONSE (attempt 1) â€“ clearing PoW cache and retrying...
+65955: [RETRY] Attempt 1 for session=d1711c33-72d...
+65956: [POW] account=1 solved in 0.1s (difficulty=144000)
+65957: [POW] prefetched for account=1 (expires in 283s)
+65958: [TIMING] Stream ready (25.9s, resp_id=6)
+65959: [32mINFO[0m:     fdbd:dc53:24:483::34:0 - "[1mPOST /v1/chat/completions HTTP/1.1[0m" [32m200 OK[0m
+65960: [DEBUG] _ensure_slot(slot=0) called, current in_progress=False
+65961: [DEBUG] ap.is_valid(0) = True, slots[0] = Session(auth_token='sXGHHNT5Qi63OK6gsPr5Gvn6f9ATOjkcUkSXfQHxQhfQ2lFYcDJfa8W28Ti/HT+C', cookies={'.thumbcache_6b2e5483f9d858d7c661c5e276b6a6ae': 'U4ocV9leWOfue5w56bXLRNQDJBJevGBYFlRAbKfjTy8tGxz2nj6320U+LE5Noi/2e9cPBqkZDr+tKR1roWrTsQ%3D%3D', 'aws-waf-token': '49f0dbf9-82f3-4d8d-aa27-a5b7eb2debbb:CgoAYRp78F4JAAAA:le4qwq8VPoVdeZ7yfvHsKGx0bUaS4n+NGNZtqtTeq+KsEwEDukPhOb3plV3Zra/giMxC/k9+s/RIYssWPesRCa9z6VwGo4nqHzptI7IyGgUsY5JVxvziYBCFRmmglg9m1q7DpABY/319yw2gu1tSqz7f8J4gw5HOrYqYq+yL7Q+nIHXnVIDJfQA824TM2Y0=', 'ds_session_id': '4c69a7875813421ca5397395394cd374', 'smidV2': '2026070219401560b7e4627375f01368e04af4aa94ecc000557a0837d2711b0'}, user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36', created_at=1783014203.9542973, last_validated_at=1783014203.954298)
+65962: [RAW] {"request_message_id":5,"response_message_id":6,"model_type":"expert"}
+65963: [32mINFO[0m:     127.0.0.1:65524 - "[1mPOST /v1/login?slot=0&clean=true HTTP/1.1[0m" [31m401 Unauthorized[0m
+65964: [AUTH] slot=0 Cleaned Chrome profile: C:\Users\Ksawier\Pictures\Screenshots\Projekty_autorskie\deepseek-proxy-clean\.chrome_slot\slot_0
+65965: [RAW] {"updated_at":1786739617.055747}
+65966: [RAW] {"v":{"response":{"message_id":6,"parent_id":5,"model":"","role":"ASSISTANT","thinking_enabled":true,"ban_edit":false,"ban_regenerate":false,"status":"WIP","incomplete_message":null,"accumulated_token
+65967: Bypass successful.
+65968: [AUTH] slot=0 Waiting for user to sign in... (DO NOT close Chrome)
+65969: [YIELD] text from delta: 'Nap'
+65970: [YIELD] text from delta: 'raw'
+65971: [YIELD] text from delta: 'iam'
+65972: [YIELD] text from delta: ' b'
+65973: [YIELD] text from delta: 'łą'
+65974: [YIELD] text from delta: 'd'
+65975: [YIELD] text from delta: ' bezpie'
+65976: [YIELD] text from delta: 'cz'
+65977: [YIELD] text from delta: 'nika'
+65978: [YIELD] text from delta: ' `'
+65979: [YIELD] text from delta: 'MAX'
+65980: [YIELD] text from delta: '_'
+65981: [YIELD] text from delta: 'ITER'
+65982: [YIELD] text from delta: 'ATIONS'
+65983: [YIELD] text from delta: ' ='
+65984: [YIELD] text from delta: ' '
+65985: [YIELD] text from delta: '0'
+65986: [YIELD] text from delta: '`'
+65987: [YIELD] text from delta: ' w'
+65988: [YIELD] text from delta: ' '
+65989: [YIELD] text from delta: '4'
+65990: [YIELD] text from delta: ' p'
+65991: [YIELD] text from delta: 'ę'
+65992: [YIELD] text from delta: 'tl'
+65993: [YIELD] text from delta: 'ach'
+65994: [YIELD] text from delta: '.\n\n'
+65995: [TC] SearchReplace({"file_path": "c:\\Users\\Ksawier\\Pictures\\Screenshots\\Projekty_autorskie\\us)  span=(63,1065)
+65996: [TC]  param 'file_path': str = 'c:\\Users\\Ksawier\\Pictures\\Screenshots\\Projekty_autorskie\\useme\\dry_runy\\src\\orchestrator.p
+65997: [TC]  param 'old_str': str = 'iteracja += 1\n        if iteracja > MAX_ITERATIONS:\n            add_entry(entries, sekcja="CIEKAW
+65998: [TC]  param 'new_str': str = 'iteracja += 1\n        if MAX_ITERATIONS > 0 and iteracja > MAX_ITERATIONS:\n            add_entry(
+65999: [YIELD] text[1065:1066] -> '\n'
+66000: [TC] SearchReplace({"file_path": "c:\\Users\\Ksawier\\Pictures\\Screenshots\\Projekty_autorskie\\us)  span=(1066,2064)
+66001: [TC]  param 'file_path': str = 'c:\\Users\\Ksawier\\Pictures\\Screenshots\\Projekty_autorskie\\useme\\dry_runy\\src\\orchestrator.p
+66002: [TC]  param 'old_str': str = 'runda += 1\n        if runda > MAX_ITERATIONS:\n            add_entry(entries, sekcja="WYCENA",\n  
+66003: [TC]  param 'new_str': str = 'runda += 1\n        if MAX_ITERATIONS > 0 and runda > MAX_ITERATIONS:\n            add_entry(entrie
+66004: [YIELD] text[2064:2065] -> '\n'
+66005: [TC] SearchReplace({"file_path": "c:\\Users\\Ksawier\\Pictures\\Screenshots\\Projekty_autorskie\\us)  span=(2065,3057)
+66006: [TC]  param 'file_path': str = 'c:\\Users\\Ksawier\\Pictures\\Screenshots\\Projekty_autorskie\\useme\\dry_runy\\src\\orchestrator.p
+66007: [TC]  param 'old_str': str = 'runda += 1\n        if runda > MAX_ITERATIONS:\n            add_entry(entries, sekcja="TREŚĆ",\n   
+66008: [TC]  param 'new_str': str = 'runda += 1\n        if MAX_ITERATIONS > 0 and runda > MAX_ITERATIONS:\n            add_entry(entrie
+66009: [YIELD] text[3057:3058] -> '\n'
+66010: [TC] SearchReplace({"file_path": "c:\\Users\\Ksawier\\Pictures\\Screenshots\\Projekty_autorskie\\us)  span=(3058,4046)
+66011: [TC]  param 'file_path': str = 'c:\\Users\\Ksawier\\Pictures\\Screenshots\\Projekty_autorskie\\useme\\dry_runy\\src\\orchestrator.p
+66012: [TC]  param 'old_str': str = 'iteracja += 1\n        if iteracja > MAX_ITERATIONS:\n            add_entry(entries, sekcja="CIEKAW
+66013: [TC]  param 'new_str': str = 'iteracja += 1\n        if MAX_ITERATIONS > 0 and iteracja > MAX_ITERATIONS:\n            add_entry(
+66014: [TIMING] DS stream done, resp_id=6 finished=True
+66015: [TIMING] Stream done (46.0s, 4 tools, wm=cf62f3be1f4c...)
+66016: [RAW REQUEST BODY]
+66017:   fields: ['model', 'max_tokens', 'stream', 'tools', 'messages']
+66018:   model: "deepseek-v4-flash"
+66019:   max_tokens: 16000
+66020:   stream: True
+66021:   tools: 21 items
+66022:     - Task: params=['description', 'query', 'subagent_type', 'response_language']
+66023:     - Skill: params=['name']
+66024:     - SearchCodebase: params=['information_request', 'target_directories']
+66025:     - Glob: params=['pattern', 'path']
+66026:     - LS: params=['path', 'ignore']
+66027:     - Grep: params=['pattern', 'path', 'glob', 'output_mode', '-B', '-A', '-C', '-n', '-i', 'type', 'head_limit', 'offset', 'multiline']
+66028:     - Read: params=['file_path', 'offset', 'limit']
+66029:     - RunCommand: params=['cwd', 'command', 'target_terminal', 'command_type', 'blocking', 'wait_ms_before_async', 'requires_approval']
+66030:     - CheckCommandStatus: params=['command_id', 'wait_ms_before_check', 'output_character_count', 'skip_character_count', 'output_priority', 'filter']
+66031:     - StopCommand: params=['command_id']
+66032:     - DeleteFile: params=['file_paths']
+66033:     - SearchReplace: params=['file_path', 'old_str', 'new_str']
+66034:     - Write: params=['file_path', 'content']
+66035:     - AskUserQuestion: params=['questions']
+66036:     - NotifyUser: params=['explanation', 'file_paths']
+66037:     - WebSearch: params=['query', 'num', 'lr']
+66038:     - WebFetch: params=['url']
+66039:     - GetDiagnostics: params=['uri']
+66040:     - TodoWrite: params=['todos', 'merge', 'summary']
+66041:     - OpenPreview: params=['preview_url', 'command_id']
+66042:     - run_mcp: params=['server_name', 'tool_name', 'args']
+66043:   messages: 18 items
+66044: [ACL TOKEN] payload keys: ['aud', 'exp', 'iat', 'iss', 'legid', 'sub']
+66045: [ACL TOKEN] sub: spiffe://prod-row.byted.org/ns:tce/r:singapore-central/vdc:my/id:flow.ide.copilot
+66046: [ACL TOKEN] legid: {'authority': 'TCE', 'expireTime': 1786798498, 'extension': {'cluster_name': 'kitex_ide', 'idc': 'MY', 'logical_cluster': 'default', 'physical_cluster': 'Fed01', 'service_type': 'app_engine', 'zone': 
+66047: [REQUEST] roles={'assistant', 'user', 'tool', 'system'} tools=4 msgs=18
+66048: [CONV_KEY] legid={'authority': 'TCE', 'expireTime': 1786798498, 'extension': {'cluster_name': 'kitex_ide', 'idc': 'MY', 'logical_cluster': 'default', 'physical_cluster': 'Fed01', 'service_type': 'app_engine', 'zone': 'Singapore-Central'}, 'primaryAuthType': 'psm', 'psm': 'flow.ide.copilot', 'user': 'caoyunxiang', 'version': 0} conv_key=jwt_leg_{'authority': 'TCE', 'expireTime': 1786798498, 'extension': {'cluster_name': 'kitex_ide', 'idc': 'MY', 'logical_cluster': 'default', 'physical_cluster': 'Fed01', 'service_type': 'app_engine', 'zone': 'Singapore-Central'}, 'primaryAuthType': 'psm', 'psm': 'flow.ide.copilot', 'user': 'caoyunxiang', 'version': 0}_5d3e4663
+66049:   [tool] id=call_BWxHZIovT0dvqgEATtuG4Jd9 content=549 chars: '<toolcall_status>done</toolcall_status>\n<toolcall_result>\n<file_changes>\nThe toolcall made the following changes to the '
+66050:   [tool] id=call_PYoNxtqs8JjBn04JSqnpBztC content=543 chars: '<toolcall_status>done</toolcall_status>\n<toolcall_result>\n<file_changes>\nThe toolcall made the following changes to the '
+66051:   [tool] id=call_8ZJ5voiJK5YhQmQH4xa9GWfO content=542 chars: '<toolcall_status>done</toolcall_status>\n<toolcall_result>\n<file_changes>\nThe toolcall made the following changes to the '
+66052:   [tool] id=call_skMAlILvUQxczWUoRzokkafV content=549 chars: '<toolcall_status>done</toolcall_status>\n<toolcall_result>\n<file_changes>\nThe toolcall made the following changes to the '
+66053: [DEBUG] state: parent_id=4 msgs_len=8 req_len=18 resume_cond=parent_is_not_none len_ok
+66054: [ROUTER] Model 'deepseek-v4-flash' -> model_type='default', thinking=True, search=False
+66055: [ACCOUNT] conv_key=jwt_leg_{'authority': 'T... account_idx=2
+66056: [DEBUG] _ensure_slot(slot=2) called, current in_progress=False
+66057: [DEBUG] ap.is_valid(2) = True, slots[2] = Session(auth_token='Ycr4YDhnv0ZStY02iEC213Po+0w22Q0WE+yv/p4HyOuC/38OZuz1gJyFTEeigCc5', cookies={'smidV2': '2026070219452190749431c2da7b6c9c89d2b0c3202313001b6e1e0cf2dcf90', 'ds_session_id': 'a1a9a41d4fba41968c017d4c098a6055', 'aws-waf-token': '49f0dbf9-82f3-4d8d-aa27-a5b7eb2debbb:CgoAqtN8yYIAAAAA:M1yOpgg3eBJBAMRp7gAGKzrrGdxT/sfX6ekJTe5VDPeqTobDzLHNAEnp5p8OYbynC5TFVLg/vDidP1rnvtiUUv4NQ1pDykoyCPO94xgwSLBvoKQPzU1IOxa6sNRAHh0cwgk5yUKSdpL7bBAnTGX/txIFYt2i7cgX8yS9uPIO4jUV+MoRati03kZXMRFr5Ts=', '.thumbcache_6b2e5483f9d858d7c661c5e276b6a6ae': 'bbKU7SQykgzoAoZpQkt0Erffl9Pkna/mbsulNc/XDkAXK6pra6UxX6l0ahHA0jM98Io2DsJ58psJ+DVF3FXmbw%3D%3D'}, user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36', created_at=1783014529.4509547, last_validated_at=1783014529.450955)
+66058: [HYBRID] Using web chat (resume, msgs=18)
+66059: [RESUME] ds_session=99d07e76-8e84-4c2b-9034-f286f24ed7eb account=2 parent=4 skip=8 send=10 new msgs (tools preserved)
+66060: [TIMING] PoW+solve+stream setup...
+66061: [CHUNKED INGESTION] Prompt (91019 chars) > 50000 -> split into 2 chunks for session 99d07e76-8e84-4c2b-9034-f286f24ed7eb
+66062: [CHUNKED INGESTION] Ingesting chunk 1/2 (49314 chars) with parent_id=4...
+66063: [POW] account=2 solved in 0.0s (difficulty=144000)
+66064: [POW] prefetched for account=2 (expires in 283s)
+66065: [RAW] {"request_message_id":5,"response_message_id":6,"model_type":"expert"}
+66066: [RAW] {"updated_at":1786739641.527463}
+66067: [RAW] {"v":{"response":{"message_id":6,"parent_id":5,"model":"","role":"ASSISTANT","thinking_enabled":false,"ban_edit":false,"ban_regenerate":false,"status":"WIP","incomplete_message":null,"accumulated_toke
+66068: [FALLBACK] yielding 447 chars of pre-response text
+66069: [CHUNKED INGESTION] Chunk 1 ingested in 4.94s -> parent_id=6
+66070: [CHUNKED INGESTION] Ingestion complete. Final chunk 2 (41721 chars) ready for stream (parent_id=6)
+66071: [TIMING] Stream ready (5.6s, resp_id=8)
+66072: [32mINFO[0m:     fdbd:dc53:2b:41c::23:0 - "[1mPOST /v1/chat/completions HTTP/1.1[0m" [32m200 OK[0m
+66073: [RAW] {"request_message_id":7,"response_message_id":8,"model_type":"expert"}
+66074: [RAW] {"updated_at":1786739646.774647}
+66075: [RAW] {"v":{"response":{"message_id":8,"parent_id":7,"model":"","role":"ASSISTANT","thinking_enabled":true,"ban_edit":false,"ban_regenerate":false,"status":"WIP","incomplete_message":null,"accumulated_token
+66076: [TC] RunCommand({"command": "python -m py_compile src\\orchestrator.py src\\runner.py src\\watch)  span=(0,462)
+66077: [TC]  param 'command': str = 'python -m py_compile src\\orchestrator.py src\\runner.py src\\watcher.py; if ($?) { echo "SYNTAX OK
+66078: [TC]  param 'cwd': str = 'c:\\Users\\Ksawier\\Pictures\\Screenshots\\Projekty_autorskie\\useme\\dry_runy'
+66079: [TC]  param 'blocking': bool = True
+66080: [TC]  param 'command_type': str = 'short_running_process'
+66081: [TC]  param 'requires_approval': bool = False
+66082: [YIELD] text[462:463] -> '\n'
+66083: [TC] Grep({"pattern": "health|--clean|def main|argparse", "path": "c:\\Users\\Ksawier\\Pic)  span=(463,819)
+66084: [TC]  param 'pattern': str = 'health|--clean|def main|argparse'
+66085: [TC]  param 'path': str = 'c:\\Users\\Ksawier\\Pictures\\Screenshots\\Projekty_autorskie\\useme\\dry_runy\\proxy\\server.py'
+66086: [TC]  param 'output_mode': str = 'content'
+66087: [TC]  param '-n': bool = True
+66088: [TC]  param '-i': bool = True
+66089: [YIELD] text[819:820] -> '\n'
+66090: [TC] RunCommand({"command": "python -c \"import pytesseract, PIL; print('DEPS OK')\"", "cwd": "c)  span=(820,1236)
+66091: [TC]  param 'command': str = 'python -c "import pytesseract, PIL; print(\'DEPS OK\')"'
+66092: [TC]  param 'cwd': str = 'c:\\Users\\Ksawier\\Pictures\\Screenshots\\Projekty_autorskie\\useme\\dry_runy'
+66093: [TC]  param 'blocking': bool = True
+66094: [TC]  param 'command_type': str = 'short_running_process'
+66095: [TC]  param 'requires_approval': bool = False
+66096: [TIMING] DS stream done, resp_id=8 finished=True
+66097: [TIMING] Stream done (15.8s, 3 tools, wm=e9dc7d73e732...)
+66098: [RAW REQUEST BODY]
+66099:   fields: ['model', 'max_tokens', 'stream', 'tools', 'messages']
+66100:   model: "deepseek-v4-flash"
+66101:   max_tokens: 16000
+66102:   stream: True
+66103:   tools: 21 items
+66104:     - Task: params=['description', 'query', 'subagent_type', 'response_language']
+66105:     - Skill: params=['name']
+66106:     - SearchCodebase: params=['information_request', 'target_directories']
+66107:     - Glob: params=['pattern', 'path']
+66108:     - LS: params=['path', 'ignore']
+66109:     - Grep: params=['pattern', 'path', 'glob', 'output_mode', '-B', '-A', '-C', '-n', '-i', 'type', 'head_limit', 'offset', 'multiline']
+66110:     - Read: params=['file_path', 'offset', 'limit']
+66111:     - RunCommand: params=['cwd', 'command', 'target_terminal', 'command_type', 'blocking', 'wait_ms_before_async', 'requires_approval']
+66112:     - CheckCommandStatus: params=['command_id', 'wait_ms_before_check', 'output_character_count', 'skip_character_count', 'output_priority', 'filter']
+66113:     - StopCommand: params=['command_id']
+66114:     - DeleteFile: params=['file_paths']
+66115:     - SearchReplace: params=['file_path', 'old_str', 'new_str']
+66116:     - Write: params=['file_path', 'content']
+66117:     - AskUserQuestion: params=['questions']
+66118:     - NotifyUser: params=['explanation', 'file_paths']
+66119:     - WebSearch: params=['query', 'num', 'lr']
+66120:     - WebFetch: params=['url']
+66121:     - GetDiagnostics: params=['uri']
+66122:     - TodoWrite: params=['todos', 'merge', 'summary']
+66123:     - OpenPreview: params=['preview_url', 'command_id']
+66124:     - run_mcp: params=['server_name', 'tool_name', 'args']
+66125:   messages: 22 items
+66126: [ACL TOKEN] payload keys: ['aud', 'exp', 'iat', 'iss', 'legid', 'sub']
+66127: [ACL TOKEN] sub: spiffe://prod-row.byted.org/ns:tce/r:singapore-central/vdc:my/id:flow.ide.copilot
+66128: [ACL TOKEN] legid: {'authority': 'TCE', 'expireTime': 1786798553, 'extension': {'cluster_name': 'kitex_ide', 'idc': 'MY', 'logical_cluster': 'default', 'physical_cluster': 'Fed02', 'service_type': 'app_engine', 'zone': 
+66129: [REQUEST] roles={'assistant', 'user', 'tool', 'system'} tools=5 msgs=22
+66130: [CONV_KEY] legid={'authority': 'TCE', 'expireTime': 1786798553, 'extension': {'cluster_name': 'kitex_ide', 'idc': 'MY', 'logical_cluster': 'default', 'physical_cluster': 'Fed02', 'service_type': 'app_engine', 'zone': 'Singapore-Central'}, 'primaryAuthType': 'psm', 'psm': 'flow.ide.copilot', 'user': 'caoyunxiang', 'version': 0} conv_key=jwt_leg_{'authority': 'TCE', 'expireTime': 1786798553, 'extension': {'cluster_name': 'kitex_ide', 'idc': 'MY', 'logical_cluster': 'default', 'physical_cluster': 'Fed02', 'service_type': 'app_engine', 'zone': 'Singapore-Central'}, 'primaryAuthType': 'psm', 'psm': 'flow.ide.copilot', 'user': 'caoyunxiang', 'version': 0}_5d3e4663
+66131:   [tool] id=call_skMAlILvUQxczWUoRzokkafV content=549 chars: '<toolcall_status>done</toolcall_status>\n<toolcall_result>\n<file_changes>\nThe toolcall made the following changes to the '
+66132:   [tool] id=call_AHhqWRu5CqYUNMQPNIbtM2VH content=1135 chars: '<toolcall_status>done</toolcall_status>\n<toolcall_result>\n<terminal_id>2</terminal_id>\n<terminal_cwd>C:\\Users\\Ksawier\\Pi'
+66133:   [tool] id=call_1EUv1oRwQbAL1aaq8YpmCzoC content=296 chars: '<toolcall_status>done</toolcall_status>\n<toolcall_result>\n72:    """True gdy tryb czysty wlaczony przy starcie (--clean '
+66134:   [tool] id=call_XNJeDMbVihBg8Ia9aelrGjoz content=843 chars: '<toolcall_status>done</toolcall_status>\n<toolcall_result>\n<terminal_id>2</terminal_id>\n<terminal_cwd>C:\\Users\\Ksawier\\Pi'
+66135: [DEBUG] state: parent_id=6 msgs_len=13 req_len=22 resume_cond=parent_is_not_none len_ok
+66136: [ROUTER] Model 'deepseek-v4-flash' -> model_type='default', thinking=True, search=False
+66137: [ACCOUNT] conv_key=jwt_leg_{'authority': 'T... account_idx=1
+66138: [DEBUG] _ensure_slot(slot=1) called, current in_progress=False
+66139: [DEBUG] ap.is_valid(1) = True, slots[1] = Session(auth_token='dzq4pFC5OAQ1xpATu2kYJACsFjoylHlmN1BNdCyTqhQ3aDVeWY48J2iS0ApcCq//', cookies={'.thumbcache_6b2e5483f9d858d7c661c5e276b6a6ae': 'gM5fzuctcmMYkUM7xQ5Dxwq7SbSLt7+WVqUlF8fJ90Xp5eAjF58VLogp2Ns/zEX7fr0EilColJTNTUDkZB19Iw%3D%3D', 'smidV2': '202607021944259d7fe75c9b09c6362994eae51e363f2f00e35fa25aad7fb40', 'aws-waf-token': '49f0dbf9-82f3-4d8d-aa27-a5b7eb2debbb:CgoAkep8d3QEAAAA:E5DG2K3kr4s9+hHNqnBObQ3Qoun3OpEfCMJIQ8b/Jyz3bcVLMTctN3xRDYP8GJN2MtK79EuVipx36rqw4COBSQ6BWrTLHrFcFyIY+eHeHUsz4MbWP1gfVNPUi2FnKFA1Iv8bF+SMJZ85eIbCGhW5wGqQOQ5sLWPsJimTzVFHMVPMqKpel2FG1NjhAk4mMRg=', 'ds_session_id': 'd577a4ff6f674c7883007b28e5d50700'}, user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36', created_at=1783014300.860996, last_validated_at=1783014300.860996)
+66140: [HYBRID] Using web chat (resume, msgs=22)
+66141: [RESUME] ds_session=d1711c33-72df-4efd-8c21-fc7290cd488c account=1 parent=6 skip=13 send=9 new msgs (tools preserved)
+66142: [TIMING] PoW+solve+stream setup...
+66143: [CHUNKED INGESTION] Prompt (51813 chars) > 50000 -> split into 2 chunks for session d1711c33-72df-4efd-8c21-fc7290cd488c
+66144: [CHUNKED INGESTION] Ingesting chunk 1/2 (10104 chars) with parent_id=6...
+66145: [RAW] {"request_message_id":7,"response_message_id":8,"model_type":"expert"}
+66146: [RAW] {"updated_at":1786739661.026315}
+66147: [RAW] {"v":{"response":{"message_id":8,"parent_id":7,"model":"","role":"ASSISTANT","thinking_enabled":false,"ban_edit":false,"ban_regenerate":false,"status":"WIP","incomplete_message":null,"accumulated_toke
+66148: [FALLBACK] yielding 1446 chars of pre-response text
+66149: [CHUNKED INGESTION] Chunk 1 ingested in 6.50s -> parent_id=8
+66150: [CHUNKED INGESTION] Ingestion complete. Final chunk 2 (41721 chars) ready for stream (parent_id=8)
+66151: [POW] INVALID_POW_RESPONSE (attempt 1) â€“ clearing PoW cache and retrying...
+66152: [RETRY] Attempt 1 for session=d1711c33-72d...
+66153: [POW] account=1 solved in 0.0s (difficulty=144000)
+66154: [POW] prefetched for account=1 (expires in 283s)
+66155: [TIMING] Stream ready (8.2s, resp_id=10)
+66156: [32mINFO[0m:     fdbd:dc53:21:320::31:0 - "[1mPOST /v1/chat/completions HTTP/1.1[0m" [32m200 OK[0m
+66157: [RAW] {"request_message_id":9,"response_message_id":10,"model_type":"expert"}
+66158: [RAW] {"updated_at":1786739670.529511}
+66159: [RAW] {"v":{"response":{"message_id":10,"parent_id":9,"model":"","role":"ASSISTANT","thinking_enabled":true,"ban_edit":false,"ban_regenerate":false,"status":"WIP","incomplete_message":null,"accumulated_toke
+66160: [YIELD] text from delta: 'Sp'
+66161: [YIELD] text from delta: 'raw'
+66162: [YIELD] text from delta: 'dz'
+66163: [YIELD] text from delta: 'ę'
+66164: [YIELD] text from delta: ' dok'
+66165: [YIELD] text from delta: 'ład'
+66166: [YIELD] text from delta: 'nie'
+66167: [YIELD] text from delta: ' l'
+66168: [YIELD] text from delta: 'ini'
+66169: [YIELD] text from delta: 'ę'
+66170: [YIELD] text from delta: ' start'
+66171: [YIELD] text from delta: 'u'
+66172: [YIELD] text from delta: ' proxy'
+66173: [YIELD] text from delta: ' w'
+66174: [YIELD] text from delta: ' BAT'
+66175: [YIELD] text from delta: ','
+66176: [YIELD] text from delta: ' bo'
+66177: [YIELD] text from delta: ' wid'
+66178: [YIELD] text from delta: 'zę'
+66179: [YIELD] text from delta: ' tam'
+66180: [YIELD] text from delta: ' pode'
+66181: [YIELD] text from delta: 'j'
+66182: [YIELD] text from delta: 'rz'
+66183: [YIELD] text from delta: 'ane'
+66184: [YIELD] text from delta: ' z'
+66185: [YIELD] text from delta: 'agn'
+66186: [YIELD] text from delta: 'ie'
+66187: [YIELD] text from delta: 'ż'
+66188: [YIELD] text from delta: 'd'
+66189: [YIELD] text from delta: 'ż'
+66190: [YIELD] text from delta: 'one'
+66191: [YIELD] text from delta: ' c'
+66192: [YIELD] text from delta: 'ud'
+66193: [YIELD] text from delta: 'z'
+66194: [YIELD] text from delta: 'ysł'
+66195: [YIELD] text from delta: 'owy'
+66196: [YIELD] text from delta: '.\n\n'
+66197: [TC] Read({"file_path": "c:\\Users\\Ksawier\\Pictures\\Screenshots\\Projekty_autorskie\\us)  span=(95,257)
+66198: [TC]  param 'file_path': str = 'c:\\Users\\Ksawier\\Pictures\\Screenshots\\Projekty_autorskie\\useme\\dry_runy\\2_dry_run.bat'
+66199: [TIMING] DS stream done, resp_id=10 finished=True
+66200: [TIMING] Stream done (44.8s, 1 tools, wm=186075fd8662...)
+66201: [RAW REQUEST BODY]
+66202:   fields: ['model', 'max_tokens', 'stream', 'tools', 'messages']
+66203:   model: "deepseek-v4-flash"
+66204:   max_tokens: 16000
+66205:   stream: True
+66206:   tools: 21 items
+66207:     - Task: params=['description', 'query', 'subagent_type', 'response_language']
+66208:     - Skill: params=['name']
+66209:     - SearchCodebase: params=['information_request', 'target_directories']
+66210:     - Glob: params=['pattern', 'path']
+66211:     - LS: params=['path', 'ignore']
+66212:     - Grep: params=['pattern', 'path', 'glob', 'output_mode', '-B', '-A', '-C', '-n', '-i', 'type', 'head_limit', 'offset', 'multiline']
+66213:     - Read: params=['file_path', 'offset', 'limit']
+66214:     - RunCommand: params=['cwd', 'command', 'target_terminal', 'command_type', 'blocking', 'wait_ms_before_async', 'requires_approval']
+66215:     - CheckCommandStatus: params=['command_id', 'wait_ms_before_check', 'output_character_count', 'skip_character_count', 'output_priority', 'filter']
+66216:     - StopCommand: params=['command_id']
+66217:     - DeleteFile: params=['file_paths']
+66218:     - SearchReplace: params=['file_path', 'old_str', 'new_str']
+66219:     - Write: params=['file_path', 'content']
+66220:     - AskUserQuestion: params=['questions']
+66221:     - NotifyUser: params=['explanation', 'file_paths']
+66222:     - WebSearch: params=['query', 'num', 'lr']
+66223:     - WebFetch: params=['url']
+66224:     - GetDiagnostics: params=['uri']
+66225:     - TodoWrite: params=['todos', 'merge', 'summary']
+66226:     - OpenPreview: params=['preview_url', 'command_id']
+66227:     - run_mcp: params=['server_name', 'tool_name', 'args']
+66228:   messages: 24 items
+66229: [ACL TOKEN] payload keys: ['aud', 'exp', 'iat', 'iss', 'legid', 'sub']
+66230: [ACL TOKEN] sub: spiffe://prod-row.byted.org/ns:tce/r:singapore-central/vdc:my/id:flow.ide.copilot
+66231: [ACL TOKEN] legid: {'authority': 'TCE', 'expireTime': 1786798645, 'extension': {'cluster_name': 'kitex_ide', 'idc': 'MY', 'logical_cluster': 'default', 'physical_cluster': 'Fed03', 'service_type': 'app_engine', 'zone': 
+66232: [REQUEST] roles={'assistant', 'user', 'tool', 'system'} tools=6 msgs=24
+66233: [CONV_KEY] legid={'authority': 'TCE', 'expireTime': 1786798645, 'extension': {'cluster_name': 'kitex_ide', 'idc': 'MY', 'logical_cluster': 'default', 'physical_cluster': 'Fed03', 'service_type': 'app_engine', 'zone': 'Singapore-Central'}, 'primaryAuthType': 'psm', 'psm': 'flow.ide.copilot', 'user': 'caoyunxiang', 'version': 0} conv_key=jwt_leg_{'authority': 'TCE', 'expireTime': 1786798645, 'extension': {'cluster_name': 'kitex_ide', 'idc': 'MY', 'logical_cluster': 'default', 'physical_cluster': 'Fed03', 'service_type': 'app_engine', 'zone': 'Singapore-Central'}, 'primaryAuthType': 'psm', 'psm': 'flow.ide.copilot', 'user': 'caoyunxiang', 'version': 0}_5d3e4663
+66234:   [tool] id=call_AHhqWRu5CqYUNMQPNIbtM2VH content=1135 chars: '<toolcall_status>done</toolcall_status>\n<toolcall_result>\n<terminal_id>2</terminal_id>\n<terminal_cwd>C:\\Users\\Ksawier\\Pi'
+66235:   [tool] id=call_1EUv1oRwQbAL1aaq8YpmCzoC content=296 chars: '<toolcall_status>done</toolcall_status>\n<toolcall_result>\n72:    """True gdy tryb czysty wlaczony przy starcie (--clean '
+66236:   [tool] id=call_XNJeDMbVihBg8Ia9aelrGjoz content=843 chars: '<toolcall_status>done</toolcall_status>\n<toolcall_result>\n<terminal_id>2</terminal_id>\n<terminal_cwd>C:\\Users\\Ksawier\\Pi'
+66237:   [tool] id=call_TdRKKEkZdVQoa9ysFVw4A5cW content=945 chars: '<toolcall_status>done</toolcall_status>\n<toolcall_result>\n 1→@echo off\n 2→chcp 65001 >nul\n 3→cd /d "%~dp0"\n 4→title DRY '
+66238: [DEBUG] state: parent_id=14 msgs_len=12 req_len=24 resume_cond=parent_is_not_none len_ok
+66239: [ROUTER] Model 'deepseek-v4-flash' -> model_type='default', thinking=True, search=False
+66240: [ACCOUNT] fallback to valid slot 1
+66241: [ACCOUNT] conv_key=jwt_leg_{'authority': 'T... account_idx=1
+66242: [DEBUG] _ensure_slot(slot=1) called, current in_progress=False
+66243: [DEBUG] ap.is_valid(1) = True, slots[1] = Session(auth_token='dzq4pFC5OAQ1xpATu2kYJACsFjoylHlmN1BNdCyTqhQ3aDVeWY48J2iS0ApcCq//', cookies={'.thumbcache_6b2e5483f9d858d7c661c5e276b6a6ae': 'gM5fzuctcmMYkUM7xQ5Dxwq7SbSLt7+WVqUlF8fJ90Xp5eAjF58VLogp2Ns/zEX7fr0EilColJTNTUDkZB19Iw%3D%3D', 'smidV2': '202607021944259d7fe75c9b09c6362994eae51e363f2f00e35fa25aad7fb40', 'aws-waf-token': '49f0dbf9-82f3-4d8d-aa27-a5b7eb2debbb:CgoAkep8d3QEAAAA:E5DG2K3kr4s9+hHNqnBObQ3Qoun3OpEfCMJIQ8b/Jyz3bcVLMTctN3xRDYP8GJN2MtK79EuVipx36rqw4COBSQ6BWrTLHrFcFyIY+eHeHUsz4MbWP1gfVNPUi2FnKFA1Iv8bF+SMJZ85eIbCGhW5wGqQOQ5sLWPsJimTzVFHMVPMqKpel2FG1NjhAk4mMRg=', 'ds_session_id': 'd577a4ff6f674c7883007b28e5d50700'}, user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36', created_at=1783014300.860996, last_validated_at=1783014300.860996)
+66244: [HYBRID] Using web chat (resume, msgs=24)
+66245: [RESUME] ds_session=1edb5b20-d57b-478d-bee4-e07a93dd7307 account=1 parent=14 skip=12 send=12 new msgs (tools preserved)
+66246: [TIMING] PoW+solve+stream setup...
+66247: [CHUNKED INGESTION] Prompt (53111 chars) > 50000 -> split into 2 chunks for session 1edb5b20-d57b-478d-bee4-e07a93dd7307
+66248: [CHUNKED INGESTION] Ingesting chunk 1/2 (11408 chars) with parent_id=14...
+66249: [WARN] No data lines from DeepSeek for session=1edb5b20-d57b-478d-bee4-e07a93dd7307 parent=14
+66250: [STREAM] Incomplete — returning partial content (0 chars). Next RESUME will continue.
+66251: [TIMING] DS stream done, resp_id=None finished=False
+66252: [CHUNKED INGESTION] Warning: chunk 1 returned None parent_id
+66253: [CHUNKED INGESTION] Ingestion complete. Final chunk 2 (41721 chars) ready for stream (parent_id=14)
+66254: [POW] INVALID_POW_RESPONSE (attempt 1) â€“ clearing PoW cache and retrying...
+66255: [RETRY] Attempt 1 for session=1edb5b20-d57...
+66256: [POW] account=1 solved in 0.0s (difficulty=144000)
+66257: [POW] prefetched for account=1 (expires in 283s)
+66258: [WARN] No data lines from DeepSeek for session=1edb5b20-d57b-478d-bee4-e07a93dd7307 parent=14
+66259: [TIMING] Stream ready (2.3s, resp_id=None)
+66260: [32mINFO[0m:     fdbd:dc53:2c:610::25:0 - "[1mPOST /v1/chat/completions HTTP/1.1[0m" [32m200 OK[0m
+66261: [STREAM] Incomplete — returning partial content (0 chars). Next RESUME will continue.
+66262: [TIMING] DS stream done, resp_id=None finished=False
+66263: [INCOMPLETE] Count=1, not bumping msgs_len (12), next RESUME will continue from partial response
+66264: [TIMING] Stream done (2.4s, 0 tools, wm=dd265bb77953...)
+66265: 
