@@ -283,9 +283,10 @@ def _has_unclosed_tool_call(text: str) -> bool:
     if not text:
         return False
 
-    # 1. Rzeczywiste tagi wywołania pojedynczego narzędzia (invoke / tool_call / call)
-    open_invokes = len(re.findall(r'<\s*(?:[|\uff5c\u2502\s]*DSML[|\uff5c\u2502\s]*)?(?:tool_call|invoke|tool_capability|_call|call)\b[^>]*>', text, re.IGNORECASE))
-    close_invokes = len(re.findall(r'</\s*(?:[|\uff5c\u2502\s]*DSML[|\uff5c\u2502\s]*)?(?:tool_call|invoke|tool_capability|_call|call)\s*>', text, re.IGNORECASE))
+    # 1. Rzeczywiste tagi wywołania narzędzia (tool_call(s), invoke, call oraz jawne nazwy narzędzi)
+    tool_names = r'(?:tool_calls?|invoke|tool_capability|_calls?|call|glob|runcommand|read|write|edit|grep|ls|task|todo_write|searchreplace|checkcommandstatus|deletefile|skill)'
+    open_invokes = len(re.findall(r'<\s*(?:[|\uff5c\u2502\s]*DSML[|\uff5c\u2502\s]*)?' + tool_names + r'\b[^>]*>', text, re.IGNORECASE))
+    close_invokes = len(re.findall(r'</\s*(?:[|\uff5c\u2502\s]*DSML[|\uff5c\u2502\s]*)?' + tool_names + r'\s*>', text, re.IGNORECASE))
     if open_invokes > close_invokes:
         return True
 
@@ -677,6 +678,7 @@ class DeepSeek:
             prev_yielded = 0
             raw_count = 0
             finished_normally = False
+            loop_aborted = False
 
             def _route_token(text):
                 """Kieruje token treści do właściwego bufora na podstawie fazy.
@@ -821,16 +823,16 @@ class DeepSeek:
                     if _tok:
                         yield _tok
                     if _detect_loop(content_buffer):
-                        finished_normally = True
+                        loop_aborted = True
                         break
                     continue
                 if not path and isinstance(val, str) and val:
                     _tok = _route_token(val)
                     if _tok:
                         yield _tok
-                    # Anti-loop guard: przetnij petle tokenow (finished_normally=True)
+                    # Anti-loop guard: przetnij petle tokenow (loop_aborted=True)
                     if _detect_loop(content_buffer):
-                        finished_normally = True
+                        loop_aborted = True
                         break
                     continue
                 if path == "response/fragments" and isinstance(val, list):
@@ -839,9 +841,9 @@ class DeepSeek:
                             _tok = _begin_phase(fragment.get("type"), fragment.get("content") or "")
                             if _tok:
                                 yield _tok
-                    # Anti-loop guard: przetnij petle tokenow (finished_normally=True)
+                    # Anti-loop guard: przetnij petle tokenow (loop_aborted=True)
                     if _detect_loop(content_buffer):
-                        finished_normally = True
+                        loop_aborted = True
                         break
                     continue
             if not response_started:
@@ -860,7 +862,7 @@ class DeepSeek:
             # Auto-continue ma sie odpalic tez, gdy strumien zakonczyl sie "normalnie"
             # (FINISHED), ale zostal niedomkniety tag narzedzia — inaczej uciety tag
             # wycieknie jako tekst i narzedzie nie zostanie wykonane.
-            while ((not finished_normally or _has_unclosed_tool_call(content_buffer)) and _auto_continue_budget > 0 and content_buffer.strip()):
+            while ((not finished_normally or _has_unclosed_tool_call(content_buffer)) and not loop_aborted and _auto_continue_budget > 0 and content_buffer.strip()):
                 _auto_continue_budget -= 1
                 auto_continue_count += 1
                 print(f"[AUTO-CONTINUE] attempt {auto_continue_count}, budget left={_auto_continue_budget}, parent={resp_msg_id} (so far {len(content_buffer)} chars)", flush=True)
@@ -903,6 +905,7 @@ class DeepSeek:
 
             result_meta["resp_msg_id"] = resp_msg_id
             result_meta["finished_normally"] = finished_normally
+            result_meta["loop_aborted"] = loop_aborted
             if not finished_normally:
                 print(f"[STREAM] Incomplete — returning partial content ({len(content_buffer)} chars). Next RESUME will continue.", flush=True)
             print(f"[TIMING] DS stream done, resp_id={resp_msg_id} finished={finished_normally}", flush=True)
@@ -1689,9 +1692,56 @@ def _repair_tool_call(name: str, params: dict) -> tuple[str, dict]:
     return name, params
 
 
+def _map_positional(name: str, body: str) -> dict:
+    """Mapuje surową treść tagu narzędzia (bez zagnieżdżonych <parameter>) na argumenty.
+
+    Deterministycznie rozdziela opcjonalne liczby na końcu dla narzędzi z plikiem
+    (Read), aby nie wkleić "plik 1220 200" do pola file_path (błąd File does not exist).
+    """
+    b = (body or "").strip()
+    if not b:
+        return {}
+    if name == "Read":
+        parts = b.rsplit(None, 2)
+        nums_at_end = []
+        while parts and parts[-1].isdigit() and len(nums_at_end) < 2:
+            nums_at_end.insert(0, parts.pop())
+        file_path = " ".join(parts).strip()
+        d = {"file_path": file_path} if file_path else {}
+        if nums_at_end:
+            d["offset"] = int(nums_at_end[0])
+        if len(nums_at_end) == 2:
+            d["limit"] = int(nums_at_end[1])
+        return d
+    if name == "Glob":
+        return {"pattern": b}
+    if name == "Grep":
+        return {"pattern": b}
+    if name == "LS":
+        return {"path": b}
+    if name == "RunCommand":
+        return {"command": b}
+    if name == "Task":
+        return {"query": b}
+    return {"query": b}
+
+
+def _should_bump_state(tools_yielded: int, result_meta: dict) -> bool:
+    """Czy tura jest sukcesem uprawniającym do bumpowania msgs_len.
+
+    Ucięty/zapętlony strumień (loop_aborted) NIGDY nie jest sukcesem, nawet jeśli
+    w content_buffer była preambuła tekstu.
+    """
+    return tools_yielded > 0 or (
+        bool(result_meta.get("finished_normally"))
+        and not bool(result_meta.get("loop_aborted"))
+    )
+
+
 def _parse_tool_calls(text: str) -> list[tuple[int, int, str, str]]:
     """Parse all tool call formats. Returns [(start, end, name, args_json), ...]"""
     results = []
+    known_tools = {"Read", "Write", "Edit", "SearchReplace", "Grep", "Glob", "LS", "RunCommand", "Task", "CheckCommandStatus", "DeleteFile", "TodoWrite"}
 
     # 1. Standard XML or DSML-wrapped invoke:
     # Matches <invoke name="...">, <tool_call name="...">, <_call name="...">, <call name="...">, <tool name="...">, and DSML variants
@@ -1776,12 +1826,19 @@ def _parse_tool_calls(text: str) -> list[tuple[int, int, str, str]]:
             pass
 
     # 6. Specific Tool Name tags e.g. <Read><file_path>...</file_path></Read>
-    for m in re.finditer(r"<([A-Z][a-zA-Z0-9_]+)>(.*?)</\1>", text, re.DOTALL):
+    #     Akceptuje małe/wielkie litery i pozycyjny content bez zagnieżdżonych tagów.
+    for m in re.finditer(r"<([A-Za-z][a-zA-Z0-9_]+)>(.*?)</\1>", text, re.DOTALL):
+        raw_name = m.group(1)
+        canon = next((kt for kt in known_tools if kt.lower() == raw_name.lower()), None)
+        if not canon:
+            continue
         params = {}
         for pm in re.finditer(r"<([a-zA-Z_]\w*)>(.*?)</\1>", m.group(2), re.DOTALL):
             params[pm.group(1)] = _parse_param_value(pm.group(2))
+        if not params:
+            params = _map_positional(canon, m.group(2))
         if params:
-            results.append((m.start(), m.end(), m.group(1), json.dumps(params)))
+            results.append((m.start(), m.end(), canon, json.dumps(params)))
 
     # 7. Pattern: [调用ToolName]{json} or [调用 ToolName]{json}
     for m in re.finditer(rf"\[{_CALL_MARKER}\s*(\w+)\]\s*(\{{)", text):
@@ -1806,7 +1863,6 @@ def _parse_tool_calls(text: str) -> list[tuple[int, int, str, str]]:
 
     # 8. CLI/Text style tool invocation: ToolName param1: val1 param2: val2
     # e.g. Grep pattern: 4570|... path: ... output_mode: content -n: true
-    known_tools = {"Read", "Write", "Edit", "SearchReplace", "Grep", "Glob", "LS", "RunCommand", "Task", "CheckCommandStatus", "DeleteFile", "TodoWrite"}
     for tn in known_tools:
         for m in re.finditer(rf"(?:^|\n)\s*({tn})\s+([a-zA-Z_-]+:\s*[^\n]+)", text):
             # FIX: wcześniej było tu `raw_args` (niezdefiniowane) -> NameError przy każdym
@@ -1818,6 +1874,16 @@ def _parse_tool_calls(text: str) -> list[tuple[int, int, str, str]]:
                     clean_k = k.lstrip("-")
                     params[clean_k] = _parse_param_value(v.strip())
                 results.append((m.start(), m.end(), tn, json.dumps(params)))
+
+    # 8b. Gola sciezka pliku z opcjonalnym offset/limit, bez tagow XML:
+    #     c:/path/file.py 120 50  ->  Read(file_path=..., offset=120, limit=50)
+    for m in re.finditer(r"(?m)^([a-zA-Z]:[/\\].*?\.(?:py|js|ts|json|md|txt|css|html|toml|yaml|yml))(?:\s+(\d+))?(?:\s+(\d+))?\s*$", text):
+        params = {"file_path": m.group(1)}
+        if m.group(2):
+            params["offset"] = int(m.group(2))
+        if m.group(3):
+            params["limit"] = int(m.group(3))
+        results.append((m.start(), m.end(), "Read", json.dumps(params)))
 
     # 9. Top-level JSON tool call: ```json {"tool": "LS", "args": {...}} ``` or raw {"tool": "...", "args": ...}
     i = 0
@@ -2435,7 +2501,9 @@ def _handle_official_api_chat(
                 # Subagent: use minimal prompt (shouldn't normally reach here, but just in case)
                 api_messages.append({"role": "system", "content": (
                     "You are a coding subagent. Execute the task using the provided tools. "
-                    "Be thorough. Return ALL requested information. Do not chat — just do the task."
+                    "Be thorough. Synthesize findings into concise facts. Quote at most 2-3 key "
+                    "code lines. NEVER copy raw tool dumps with line-number prefixes like '120→'. "
+                    "Do not chat — just do the task."
                 )})
         elif role == "user":
             if isinstance(content, list):
@@ -2958,6 +3026,14 @@ def _chat_completions_impl(req: ChatRequest, raw_request: Request):
         print(f"[HYBRID] Using web chat ({reason}, msgs={len(req.messages)})", flush=True)
 
     resume_did_full_prompt = False  # Flaga: w RESUME zbudowano juĹĽ full prompt (np. przy trimowaniu)
+    if resume and state and (state.get("loop_aborted") or state.get("stream_aborted") or state.get("incomplete_count", 0) >= 2):
+        print(f"[RESUME] Poisoned state detected (loop_aborted={state.get('loop_aborted')}, stream_aborted={state.get('stream_aborted')}, incomplete_count={state.get('incomplete_count')}) -> forcing fresh session with schemas", flush=True)
+        state["parent_id"] = None
+        state["msgs_len"] = 0
+        state["loop_aborted"] = False
+        state["stream_aborted"] = False
+        state["incomplete_count"] = 0
+        resume = False
     if resume:
         chat_id = state["ds_session"]
         parent_id = state["parent_id"]
@@ -3066,7 +3142,9 @@ def _chat_completions_impl(req: ChatRequest, raw_request: Request):
                 _orig_len = len(clean_msgs[0]["content"])
                 clean_msgs[0] = dict(clean_msgs[0], content=(
                     "You are a subagent. Execute the task below using the provided tools.\n"
-                    "Be thorough and complete. Return ALL requested information.\n"
+                    "Be thorough and complete. Synthesize findings into concise facts.\n"
+                    "Quote at most 2-3 key code lines when evidence is needed.\n"
+                    "NEVER copy raw tool dumps with line-number prefixes like '120→'.\n"
                     "Do not chat, explain, or ask questions — just do the task and report results.\n"
                     "Use tools aggressively. Read files, search code, analyze data — whatever it takes."
                 ))
@@ -3632,10 +3710,16 @@ def _chat_completions_impl(req: ChatRequest, raw_request: Request):
                             # i DeepSeek naturalnie dokończy odpowiedź.
                             # Trackuj ile razy pod rząd — po 2 rotujemy sesję DS.
                             state["incomplete_count"] = state.get("incomplete_count", 0) + 1
+                            if result_meta.get("loop_aborted"):
+                                state["loop_aborted"] = True
+                            if result_meta.get("auto_continue_failed"):
+                                state["stream_aborted"] = True
                             print(f"[INCOMPLETE] Count={state['incomplete_count']}, not bumping msgs_len ({state['msgs_len']}), next RESUME will continue from partial response", flush=True)
-                        elif tools_yielded > 0 or full.strip():
+                        elif _should_bump_state(tools_yielded, result_meta):
                             state["msgs_len"] = len(req.messages)
                             state["incomplete_count"] = 0  # Reset na sukces
+                            state["loop_aborted"] = False
+                            state["stream_aborted"] = False
                         elif old_parent and not result_meta.get("resp_msg_id"):
                             # Resume returned empty – session is dead, force new one
                             print(f"[EMPTY RESUME] Clearing conv state for {conv_key[:24]}...", flush=True)
