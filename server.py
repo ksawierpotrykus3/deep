@@ -283,8 +283,8 @@ def _has_unclosed_tool_call(text: str) -> bool:
     if not text:
         return False
 
-    # 1. Rzeczywiste tagi wywołania narzędzia (tool_call(s), invoke, call oraz jawne nazwy narzędzi)
-    tool_names = r'(?:tool_calls?|invoke|tool_capability|_calls?|call|glob|runcommand|read|write|edit|grep|ls|task|todo_write|searchreplace|checkcommandstatus|deletefile|skill)'
+    # 1. Rzeczywiste tagi wywołania narzędzia (tool_call(s), invoke, call, chińskie 调用/工具/函数 oraz jawne nazwy narzędzi)
+    tool_names = r'(?:tool_calls?|invoke|tool_capability|_calls?|call|调用|調用|工具|函数|glob|runcommand|read|write|edit|grep|ls|task|todo_write|searchreplace|checkcommandstatus|deletefile|skill)'
     open_invokes = len(re.findall(r'<\s*(?:[|\uff5c\u2502\s]*DSML[|\uff5c\u2502\s]*)?' + tool_names + r'\b[^>]*>', text, re.IGNORECASE))
     close_invokes = len(re.findall(r'</\s*(?:[|\uff5c\u2502\s]*DSML[|\uff5c\u2502\s]*)?' + tool_names + r'\s*>', text, re.IGNORECASE))
     if open_invokes > close_invokes:
@@ -1768,9 +1768,9 @@ def _parse_tool_calls(text: str, known_tools: set | list | None = None) -> list[
     # Matches <invoke name="...">, <tool_call name="...">, <_call name="...">, <call name="...">, <tool name="...">, and DSML variants
     tool_pat = re.compile(
         r'''(?:<\s*(?:[|\uff5c\u2502]\s*[|\uff5c\u2502]\s*DSML\s*[|\uff5c\u2502]\s*[|\uff5c\u2502]\s*)?tool\s+)?'''
-        r'''<\s*(?:[|\uff5c\u2502]\s*[|\uff5c\u2502]\s*DSML\s*[|\uff5c\u2502]\s*[|\uff5c\u2502]\s*)?(?:tool_call|invoke|tool_capability|_call|call|tool)\s*name=(["'])([^"']*?)\1[^>]*>'''
+        r'''<\s*(?:[|\uff5c\u2502]\s*[|\uff5c\u2502]\s*DSML\s*[|\uff5c\u2502]\s*[|\uff5c\u2502]\s*)?(?:tool_call|invoke|tool_capability|_call|call|tool|调用|調用|工具|函数)\s*name=(["'])([^"']*?)\1[^>]*>'''
         r'''(.*?)'''
-        r'''</\s*(?:[|\uff5c\u2502]\s*[|\uff5c\u2502]\s*DSML\s*[|\uff5c\u2502]\s*[|\uff5c\u2502]\s*)?(?:tool_call|invoke|tool_capability|_call|call|tool)s?>''',
+        r'''</\s*(?:[|\uff5c\u2502]\s*[|\uff5c\u2502]\s*DSML\s*[|\uff5c\u2502]\s*[|\uff5c\u2502]\s*)?(?:tool_call|invoke|tool_capability|_call|call|tool|调用|調用|工具|函数)s?>''',
         re.DOTALL | re.IGNORECASE
     )
     for m in tool_pat.finditer(text):
@@ -2035,7 +2035,7 @@ _STRIP_TAGS = re.compile(
     r"-reminder>[^\n]*|"
     r"<critical_directive>[\s\S]*?</critical_directive>|"
     r"</?previous_tool_call[^>]*>|"
-    r"</?(?:[|\uff5c\u2502\s]*DSML[|\uff5c\u2502\s]*|tool_calls?|tool_capability|invoke|_calls?|[|\uff5c\u2502\s]*cl_calls?|call|tools?|center|glob|grep|read|ls|write|deletefile|searchreplace|task|skill|runcommand|checkcommandstatus|stopcommand|askuserquestion|notifyuser|websearch|webfetch|getdiagnostics|todowrite|openpreview|run_mcp)[^>]*>|"
+    r"</?(?:[|\uff5c\u2502\s]*DSML[|\uff5c\u2502\s]*|tool_calls?|tool_capability|invoke|_calls?|[|\uff5c\u2502\s]*cl_calls?|call|tools?|center|调用|調用|工具|函数|结果|思考|glob|grep|read|ls|write|deletefile|searchreplace|task|skill|runcommand|checkcommandstatus|stopcommand|askuserquestion|notifyuser|websearch|webfetch|getdiagnostics|todowrite|openpreview|run_mcp)[^>]*>|"
     r"<tool_result[^>]*>.*?</tool_result>|</?tool_result[^>]*>|"
     r"<result[^>]*>|</result>|<status[^>]*>.*?</status>|"
     r"</?thinking[^>]*>|<tool_use_json[^>]*>.*?</tool_use_json>|"
