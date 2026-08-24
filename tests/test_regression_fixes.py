@@ -13,12 +13,13 @@ def _parse_one(text):
 
 
 def test_glob_lowercase_tag():
-    """<glob> (lowercase, positional pattern) must be recognized as Glob."""
+    """<glob> (lowercase, positional pattern) must be recognized as Glob with pattern and path separated."""
     r = _parse_one("<glob> **/*.py c:/Users/Ksawier/test </glob>")
     assert r is not None
     name, args = r
     assert name == "Glob"
-    assert args["pattern"] == "**/*.py c:/Users/Ksawier/test"
+    assert args["pattern"] == "**/*.py"
+    assert args["path"] == "c:/Users/Ksawier/test"
 
 
 def test_runcommand_lowercase_tag_with_nested_command():
@@ -87,3 +88,73 @@ def test_map_positional_does_not_glue_numbers_to_path():
     assert server._map_positional("Read", "c:/test/server.py") == {
         "file_path": "c:/test/server.py",
     }
+
+
+def test_chunk_threshold_is_at_least_95k():
+    """CHUNK_THRESHOLD must be at least 95000 to prevent breaking new chats on tool injection."""
+    assert server.CHUNK_THRESHOLD >= 95000
+
+
+def test_unclosed_tool_call_not_flushed_as_plain_content():
+    """An unclosed tool call must not leak into displayed text."""
+    partial = 'Intro text\n<invoke name="Write"><parameter name="content">import os\ncode...'
+    assert server._has_unclosed_tool_call(partial) is True
+
+
+def test_map_positional_glob_and_grep():
+    """_map_positional must handle Glob and Grep parameter combinations correctly."""
+    assert server._map_positional("Glob", "* c:/test/dir") == {
+        "path": "c:/test/dir",
+        "pattern": "*",
+    }
+    assert server._map_positional("Glob", "c:/test/dir *.md") == {
+        "path": "c:/test/dir",
+        "pattern": "*.md",
+    }
+    assert server._map_positional("Grep", "OLX|olx c:/test/dir files_with_matches 300") == {
+        "pattern": "OLX|olx",
+        "path": "c:/test/dir",
+        "output_mode": "files_with_matches",
+        "head_limit": 300,
+    }
+
+
+def test_parse_tool_calls_handles_shorthand_stacked_tags():
+    """_parse_tool_calls must extract multiple consecutive shorthand tool tags without crashing."""
+    raw = (
+        '<glob> * c:/proj <glob> **/*.md c:/proj/docs '
+        '<grep> token c:/proj files_with_matches 50 '
+        '<read> c:/proj/file.py 10 20 '
+        '</glob></glob></grep></read>'
+    )
+    calls = server._parse_tool_calls(raw, known_tools=["Glob", "Grep", "Read"])
+    assert len(calls) == 4
+    names = [c[2] for c in calls]
+    assert names == ["Glob", "Glob", "Grep", "Read"]
+
+
+def test_strip_tags_removes_cascading_closed_tags():
+    """_STRIP_TAGS must remove cascading tags like </glob></glob></grep></read>."""
+    raw = "Some text </glob></glob></grep></read>"
+    cleaned = server._clean_text(raw)
+    assert "</glob>" not in cleaned
+    assert "</grep>" not in cleaned
+    assert "</read>" not in cleaned
+    assert cleaned == "Some text"
+
+
+def test_parse_tool_calls_chinese_parameters():
+    """_parse_tool_calls must extract parameters written with Chinese tags (<参数>)."""
+    raw = (
+        '<参数 name="description">Wyodrębnij specyfikację</参数> '
+        '<参数 name="query">Przeczytaj pliki</参数> '
+        '<参数 name="subagent_type">search</参数>'
+    )
+    calls = server._parse_tool_calls(raw)
+    assert len(calls) == 1
+    start, end, name, args_json = calls[0]
+    assert name == "Task"
+    parsed = json.loads(args_json)
+    assert parsed["description"] == "Wyodrębnij specyfikację"
+    assert parsed["query"] == "Przeczytaj pliki"
+    assert parsed["subagent_type"] == "search"

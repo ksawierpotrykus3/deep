@@ -29,7 +29,7 @@ import uvicorn
 
 CONV_STATE_FILE = Path(__file__).parent / "conv_state.json"
 MAX_ACCOUNTS = 100
-MAX_CONV_ENTRIES = 25
+MAX_CONV_ENTRIES = 500
 MODE_FILE = Path(__file__).parent / "data" / "proxy_mode.txt"
 PROMPT2_FILE = Path(__file__).parent / "prompt2.txt"
 PROMPT3_FILE = Path(__file__).parent / "prompt3.txt"
@@ -290,9 +290,9 @@ def _has_unclosed_tool_call(text: str) -> bool:
     if open_invokes > close_invokes:
         return True
 
-    # 2. Rzeczywiste tagi parametrów pojedynczego narzędzia
-    open_params = len(re.findall(r'<\s*(?:[|\uff5c\u2502\s]*DSML[|\uff5c\u2502\s]*)?parameter\b[^>]*>', text, re.IGNORECASE))
-    close_params = len(re.findall(r'</\s*(?:[|\uff5c\u2502\s]*DSML[|\uff5c\u2502\s]*)?parameter\s*>', text, re.IGNORECASE))
+    # 2. Rzeczywiste tagi parametrów pojedynczego narzędzia (w tym chińskie warianty 参数 / 參數)
+    open_params = len(re.findall(r'<\s*(?:[|\uff5c\u2502\s]*DSML[|\uff5c\u2502\s]*)?(?:parameter|参数|參數)\b[^>]*>', text, re.IGNORECASE))
+    close_params = len(re.findall(r'</\s*(?:[|\uff5c\u2502\s]*DSML[|\uff5c\u2502\s]*)?(?:parameter|参数|參數)\s*>', text, re.IGNORECASE))
     if open_params > close_params:
         return True
 
@@ -1193,7 +1193,7 @@ ap = AccountPool()
 ds = DeepSeek(ap)
 
 
-MAX_PROMPT_LEN = 35000
+MAX_PROMPT_LEN = 150000
 ENABLE_ACCOUNT_MIGRATION = False  # Gdy False: wyłącza automatyczną migrację konwersacji na inne sloty/konta przy błędach busy/rate-limit (zostaje na tym samym koncie)
 
 def _compress_tool_results(messages: list[dict], threshold: int = 1500) -> list[dict]:
@@ -1238,19 +1238,22 @@ def _compress_tool_results(messages: list[dict], threshold: int = 1500) -> list[
 
 
 def _clean_system_reminders(text: str) -> str:
-    """Usuwa tagi <system-reminder>...</system-reminder>, <critical_directive>, <previous_tool_call> oraz odpakowuje <user_input>...<user_input>."""
+    """Usuwa tagi <system-reminder>...</system-reminder>, <critical_directive>, boilerplate Trae oraz odpakowuje <user_input>...<user_input>."""
     if not isinstance(text, str):
         return text
+    if "<user_input>" in text:
+        m = re.search(r'<user_input>\s*([\s\S]*?)\s*</user_input>', text)
+        if m:
+            return m.group(1).strip()
     text = re.sub(r'<critical_directive>[\s\S]*?</critical_directive>', '', text).strip()
     text = re.sub(r'<system-reminder>[\s\S]*?</system-reminder>', '', text).strip()
     text = re.sub(r'</?system-reminder[^>]*>', '', text).strip()
     text = re.sub(r'</?previous_tool_call[^>]*>', '', text).strip()
     text = re.sub(r'-reminder>[^\n]*', '', text).strip()
-    if "<user_input>" in text:
-        m = re.search(r'<user_input>\s*([\s\S]*?)\s*</user_input>', text)
-        if m:
-            text = m.group(1).strip()
-    return text
+    text = re.sub(r'<skills_instructions>[\s\S]*?</skills_instructions>', '', text).strip()
+    text = re.sub(r'<available_skills>[\s\S]*?</available_skills>', '', text).strip()
+    text = re.sub(r'intent\.\s*When a skill is relevant[^\n]*', '', text, flags=re.IGNORECASE).strip()
+    return text.strip()
 
 
 def _format_msgs(msgs: list[dict], keep_images: bool = False, strip_reminders: bool = False) -> list[str]:
@@ -1536,41 +1539,38 @@ Rules:
 - CRITICAL: When you say you will check, read, edit, or search files, you MUST emit the <tool_call> block immediately in the same message. NEVER output promises or plain text parameter lists like 'Grep pattern: ...' without the actual <tool_call> XML block!"""
 
     # Obliczamy dynamiczny budżet na wiadomości po odliczeniu schematów narzędzi
-    msgs_budget = max(5000, MAX_PROMPT_LEN - len(tools_suffix))
+    msgs_budget = max(25000, MAX_PROMPT_LEN - len(tools_suffix))
     strip_reminders = (tools is None or _clean_mode_enabled())
     parts = _format_msgs(system + rest, keep_images=bool(images), strip_reminders=strip_reminders)
-    prompt = "\n\n".join(parts)
+    
+    # Jeśli jesteśmy w trybie wznawiania (tools is None) i mamy tylko jedną wiadomość użytkownika,
+    # wysyłamy czystą treść bez zbędnych etykiet [User]:
+    if tools is None and len(parts) == 1 and parts[0].startswith("[User]: "):
+        prompt = parts[0][len("[User]: "):].strip()
+    else:
+        prompt = "\n\n".join(parts)
 
-    # Progresywne przycinanie historii do budżetu wiadomości
+    # Progresywne przycinanie STAREJ historii tylko wtedy, gdy cała historia przekracza budżet
     if len(prompt) > msgs_budget and rest:
-        for keep_n in (10, 5, 2, 1):
+        for keep_n in (20, 10, 5, 2, 1):
             if len(prompt) <= msgs_budget:
                 break
             parts = _format_msgs(system + rest[-keep_n:], keep_images=bool(images), strip_reminders=strip_reminders)
             prompt = "\n\n".join(parts)
 
-    # Ostateczny hard-cap na pojedynczą wiadomość użytkownika
-    if len(prompt) > msgs_budget:
-        allowed = msgs_budget - 200
-        prompt = prompt[:allowed] + "\n[... Prompt truncated to 35k limit to prevent backend drop ...]"
-
-    # Doklejenie schematów narzędzi
+    # Doklejenie schematów narzędzi (ZAWSZE PEŁNYCH, NIGDY NIE UCINANYCH)
     prompt += tools_suffix
 
-    # Ostateczny absolutny invariant na łączny prompt
-    if len(prompt) > MAX_PROMPT_LEN:
-        allowed = MAX_PROMPT_LEN - 200
-        prompt = prompt[:allowed] + "\n[... Prompt hard-capped to 35k limit ...]"
-
+    # Zwracamy pełny prompt — jeśli prompt > 50k znaków, _chunk_oversized_prompt wyśle go bezpiecznie w chunkach
     return prompt
 
 
-CHUNK_THRESHOLD = 50000
+CHUNK_THRESHOLD = 95000
 
 
 def _chunk_oversized_prompt(prompt: str, max_chunk_size: int = CHUNK_THRESHOLD) -> list[str]:
     """
-    Dzieli duży prompt (> 50k znaków) na listę mniejszych części (<= max_chunk_size),
+    Dzieli duży prompt (> 95k znaków) na listę mniejszych części (<= max_chunk_size),
     respektując granice wiadomości ([User]:, [Assistant]:, [System]:, <tool_result)
     oraz akapitów (\\n\\n), aby nie uszkodzić żadnego bloku kodu ani tagu XML.
     """
@@ -1714,8 +1714,26 @@ def _map_positional(name: str, body: str) -> dict:
             d["limit"] = int(nums_at_end[1])
         return d
     if name == "Glob":
+        parts = b.split(None, 1)
+        if len(parts) == 2:
+            p1, p2 = parts[0].strip(), parts[1].strip()
+            is_path = lambda s: bool(re.search(r'^[a-zA-Z]:|^[\\/]|\.[\\/]', s)) or ('\\' in s and '*' not in s)
+            if is_path(p1) and not is_path(p2):
+                return {"path": p1, "pattern": p2}
+            elif is_path(p2) and not is_path(p1):
+                return {"path": p2, "pattern": p1}
         return {"pattern": b}
     if name == "Grep":
+        parts = b.split()
+        if len(parts) >= 2:
+            pat = parts[0].strip()
+            path = parts[1].strip()
+            d = {"pattern": pat, "path": path}
+            if len(parts) >= 3 and parts[2] in ("files_with_matches", "content"):
+                d["output_mode"] = parts[2]
+            if len(parts) >= 4 and parts[3].isdigit():
+                d["head_limit"] = int(parts[3])
+            return d
         return {"pattern": b}
     if name == "LS":
         return {"path": b}
@@ -1738,10 +1756,13 @@ def _should_bump_state(tools_yielded: int, result_meta: dict) -> bool:
     )
 
 
-def _parse_tool_calls(text: str) -> list[tuple[int, int, str, str]]:
+def _parse_tool_calls(text: str, known_tools: set | list | None = None) -> list[tuple[int, int, str, str]]:
     """Parse all tool call formats. Returns [(start, end, name, args_json), ...]"""
     results = []
-    known_tools = {"Read", "Write", "Edit", "SearchReplace", "Grep", "Glob", "LS", "RunCommand", "Task", "CheckCommandStatus", "DeleteFile", "TodoWrite"}
+    if known_tools is None:
+        known_tools = {"Read", "Write", "Edit", "SearchReplace", "Grep", "Glob", "LS", "RunCommand", "Task", "CheckCommandStatus", "DeleteFile", "TodoWrite", "Skill", "AskUserQuestion", "NotifyUser", "WebSearch", "WebFetch", "GetDiagnostics", "OpenPreview", "run_mcp"}
+    else:
+        known_tools = set(known_tools)
 
     # 1. Standard XML or DSML-wrapped invoke:
     # Matches <invoke name="...">, <tool_call name="...">, <_call name="...">, <call name="...">, <tool name="...">, and DSML variants
@@ -1757,7 +1778,7 @@ def _parse_tool_calls(text: str) -> list[tuple[int, int, str, str]]:
         body = m.group(3).strip()
         params = {}
         param_pat = re.compile(
-            r'''<\s*(?:[|\uff5c\u2502]\s*[|\uff5c\u2502]\s*DSML\s*[|\uff5c\u2502]\s*[|\uff5c\u2502]\s*)?parameter\s*name=(["'])([^"']+?)\1[^>]*>(.*?)</\s*(?:[|\uff5c\u2502]\s*[|\uff5c\u2502]\s*DSML\s*[|\uff5c\u2502]\s*[|\uff5c\u2502]\s*)?parameter>''',
+            r'''<\s*(?:[|\uff5c\u2502]\s*[|\uff5c\u2502]\s*DSML\s*[|\uff5c\u2502]\s*[|\uff5c\u2502]\s*)?(?:parameter|参数|參數)\s*name=(["'])([^"']+?)\1[^>]*>(.*?)</\s*(?:[|\uff5c\u2502]\s*[|\uff5c\u2502]\s*DSML\s*[|\uff5c\u2502]\s*[|\uff5c\u2502]\s*)?(?:parameter|参数|參數)>''',
             re.DOTALL | re.IGNORECASE
         )
         for pm in param_pat.finditer(body):
@@ -1770,12 +1791,33 @@ def _parse_tool_calls(text: str) -> list[tuple[int, int, str, str]]:
                     params = parsed_jm
         results.append((m.start(), m.end(), name, json.dumps(params) if params else "{}"))
 
+    # 1b. Orphaned / unwrapped parameter blocks: <parameter name="...">... or <参数 name="...">...
+    param_block_pat = re.compile(
+        r'''(?:<\s*(?:parameter|参数|參數)\s*name=(["'])([^"']+?)\1[^>]*>([\s\S]*?)</\s*(?:parameter|参数|參數)>\s*)+''',
+        re.IGNORECASE
+    )
+    for m in param_block_pat.finditer(text):
+        block = m.group(0)
+        params = {}
+        for pm in re.finditer(r'''<\s*(?:parameter|参数|參數)\s*name=(["'])([^"']+?)\1[^>]*>([\s\S]*?)</\s*(?:parameter|参数|參數)>''', block, re.IGNORECASE):
+            params[pm.group(2)] = _parse_param_value(pm.group(3))
+        if params:
+            inferred_tool = "Task" if ("query" in params or "subagent_type" in params or "description" in params) else None
+            if not inferred_tool and "file_path" in params:
+                inferred_tool = "Write" if "content" in params else "Read"
+            if not inferred_tool and "command" in params:
+                inferred_tool = "RunCommand"
+            if inferred_tool:
+                span_start, span_end = m.start(), m.end()
+                if not any(r[0] <= span_start and r[1] >= span_end for r in results):
+                    results.append((span_start, span_end, inferred_tool, json.dumps(params)))
+
     # 2. DSML variant: < | | DSML | | name="ToolName"> ... </ | | DSML | | > or <DSML name="...">
     for m in re.finditer(r'''<(?:\s*[|\uff5c\u2502]\s*[|\uff5c\u2502]\s*)?DSML(?:\s*[|\uff5c\u2502]\s*[|\uff5c\u2502]\s*)?\s*name=(["'])([^"']*?)\1>(.*?)</(?:\s*[|\uff5c\u2502]\s*[|\uff5c\u2502]\s*)?DSML(?:\s*[|\uff5c\u2502]\s*[|\uff5c\u2502]\s*)?>''', text, re.DOTALL | re.IGNORECASE):
         name = m.group(2)
         body = m.group(3).strip()
         params = {}
-        for pm in re.finditer(r'''<parameter\s*name=(["'])([^"']+?)\1[^>]*>(.*?)</parameter>''', body, re.DOTALL | re.IGNORECASE):
+        for pm in re.finditer(r'''<(?:parameter|参数|參數)\s*name=(["'])([^"']+?)\1[^>]*>(.*?)</(?:parameter|参数|參數)>''', body, re.DOTALL | re.IGNORECASE):
             params[pm.group(2)] = _parse_param_value(pm.group(3))
         if not params:
             jm = re.search(r'\{.*\}', body, re.DOTALL)
@@ -1790,10 +1832,10 @@ def _parse_tool_calls(text: str) -> list[tuple[int, int, str, str]]:
         name = m.group(2)
         body = m.group(3).strip()
         params = {}
-        for pm in re.finditer(r'''<parameter\s*name=(["'])([^"']+?)\1[^>]*>(.*?)</parameter>''', body, re.DOTALL | re.IGNORECASE):
+        for pm in re.finditer(r'''<(?:parameter|参数|參數)\s*name=(["'])([^"']+?)\1[^>]*>(.*?)</(?:parameter|参数|參數)>''', body, re.DOTALL | re.IGNORECASE):
             params[pm.group(2)] = _parse_param_value(pm.group(3))
         if not params:
-            pm2 = re.search(r'''name=(["'])([^"']+?)\1\s*>\s*(.*?)(?:</parameter>|/parameter>|$)''', body, re.DOTALL | re.IGNORECASE)
+            pm2 = re.search(r'''name=(["'])([^"']+?)\1\s*>\s*(.*?)(?:</(?:parameter|参数|參數)>|/(?:parameter|参数|參數)>|$)''', body, re.DOTALL | re.IGNORECASE)
             if pm2:
                 params[pm2.group(2)] = _parse_param_value(pm2.group(3))
         results.append((m.start(), m.end(), name, json.dumps(params) if params else "{}"))
@@ -1826,19 +1868,46 @@ def _parse_tool_calls(text: str) -> list[tuple[int, int, str, str]]:
             pass
 
     # 6. Specific Tool Name tags e.g. <Read><file_path>...</file_path></Read>
-    #     Akceptuje małe/wielkie litery i pozycyjny content bez zagnieżdżonych tagów.
+    #     Akceptuje małe/wielkie litery i pozycyjny content bez zagnieżdżonych tagów innych narzędzi.
+    tool_names_pattern = "|".join(re.escape(kt) for kt in known_tools) if known_tools else ""
     for m in re.finditer(r"<([A-Za-z][a-zA-Z0-9_]+)>(.*?)</\1>", text, re.DOTALL):
         raw_name = m.group(1)
         canon = next((kt for kt in known_tools if kt.lower() == raw_name.lower()), None)
         if not canon:
             continue
+        inner = m.group(2)
+        if tool_names_pattern and re.search(rf"<(?:\/?(?:{tool_names_pattern}))\b", inner, re.IGNORECASE):
+            continue
         params = {}
-        for pm in re.finditer(r"<([a-zA-Z_]\w*)>(.*?)</\1>", m.group(2), re.DOTALL):
+        for pm in re.finditer(r"<([a-zA-Z_]\w*)>(.*?)</\1>", inner, re.DOTALL):
             params[pm.group(1)] = _parse_param_value(pm.group(2))
         if not params:
-            params = _map_positional(canon, m.group(2))
+            params = _map_positional(canon, inner)
         if params:
             results.append((m.start(), m.end(), canon, json.dumps(params)))
+
+    # 6b. Shorthand consecutive tool tags (unclosed or stacked): <tool> body <next_tool>
+    #     e.g. <glob> * c:/path <glob> **/*.md c:/path <grep> query c:/path <read> c:/path/f.py
+    if known_tools:
+        tool_names_pattern = "|".join(re.escape(kt) for kt in known_tools)
+        for m in re.finditer(rf"<({tool_names_pattern})>([\s\S]*?)(?=<(?:\/?(?:{tool_names_pattern}))[^>]*>|\Z)", text, re.IGNORECASE):
+            tname = m.group(1)
+            raw_body = m.group(2).strip()
+            clean_body = re.sub(rf"</?(?:{tool_names_pattern})[^>]*>", "", raw_body, flags=re.IGNORECASE).strip()
+            if not clean_body:
+                continue
+            canon = next((kt for kt in known_tools if kt.lower() == tname.lower()), None)
+            if not canon:
+                continue
+            params = {}
+            for pm in re.finditer(r"<([a-zA-Z_]\w*)>(.*?)</\1>", clean_body, re.DOTALL):
+                params[pm.group(1)] = _parse_param_value(pm.group(2))
+            if not params:
+                params = _map_positional(canon, clean_body)
+            if params:
+                span_start, span_end = m.start(), m.end()
+                if not any(r[0] <= span_start and r[1] >= span_end for r in results):
+                    results.append((span_start, span_end, canon, json.dumps(params)))
 
     # 7. Pattern: [调用ToolName]{json} or [调用 ToolName]{json}
     for m in re.finditer(rf"\[{_CALL_MARKER}\s*(\w+)\]\s*(\{{)", text):
@@ -1966,17 +2035,18 @@ _STRIP_TAGS = re.compile(
     r"-reminder>[^\n]*|"
     r"<critical_directive>[\s\S]*?</critical_directive>|"
     r"</?previous_tool_call[^>]*>|"
-    r"</?(?:[|\uff5c\u2502\s]*DSML[|\uff5c\u2502\s]*|tool_calls?|tool_capability|invoke|_calls?|[|\uff5c\u2502\s]*cl_calls?|call|tools?|center)[^>]*>|"
+    r"</?(?:[|\uff5c\u2502\s]*DSML[|\uff5c\u2502\s]*|tool_calls?|tool_capability|invoke|_calls?|[|\uff5c\u2502\s]*cl_calls?|call|tools?|center|glob|grep|read|ls|write|deletefile|searchreplace|task|skill|runcommand|checkcommandstatus|stopcommand|askuserquestion|notifyuser|websearch|webfetch|getdiagnostics|todowrite|openpreview|run_mcp)[^>]*>|"
     r"<tool_result[^>]*>.*?</tool_result>|</?tool_result[^>]*>|"
     r"<result[^>]*>|</result>|<status[^>]*>.*?</status>|"
     r"</?thinking[^>]*>|<tool_use_json[^>]*>.*?</tool_use_json>|"
-    r"</?parameter[^>]*>|"
+    r"</?(?:parameter|参数|參數)[^>]*>|"
     r"<[|\uff5c\u2502\s]*tool\s*call\s*begin[|\uff5c\u2502\s]*>.*?<[|\uff5c\u2502\s]*tool\s*call\s*end[|\uff5c\u2502\s]*>|"
     r"</?[|\uff5c\u2502\s]*tool[_\s]*calls?\s*(?:begin|end)?[|\uff5c\u2502\s]*>|"
     r"<tool_call[^>]*>.*?</tool_calls?>|"
     rf"\[{_CALL_MARKER}\s*\w+\]|"
     r"\[/?[|\uff5c\u2502\s]*DSML[|\uff5c\u2502\s]*[a-z0-9_]*\]|"   # [｜｜DSML｜｜], [｜｜DSMLparam], [/｜｜DSMLparam] - kwadratowe znaczniki DSML
-    r"\[/[|\uff5c\u2502\s]*[a-z_][a-z0-9_]*\]",                     # [/parameter], [/｜｜parameter] - zamykajacy tag kontrolny w [ ]
+    r"\[/[|\uff5c\u2502\s]*[a-z_][a-z0-9_]*\]|"                     # [/parameter], [/｜｜parameter] - zamykajacy tag kontrolny w [ ]
+    r"(?:</[a-zA-Z0-9_-]+>\s*){2,}",                                # kaskadowe zamykające tagi </glob></glob></grep> itp.
     re.DOTALL | re.IGNORECASE
 )
 
@@ -2292,7 +2362,7 @@ def _get_sys_hash(messages: list[dict]) -> str:
     return ""
 
 def _get_first_user_prompt_text(messages: list[dict]) -> str:
-    """Find the FIRST user message in the history and return its plain text content."""
+    """Find the FIRST user message with actual user content in the history and return its plain text content."""
     for m in messages:
         if m.get("role") == "user":
             c = m.get("content", "")
@@ -2307,8 +2377,10 @@ def _get_first_user_prompt_text(messages: list[dict]) -> str:
             if text:
                 m_tag = re.search(r'<user_input>\s*(.*?)\s*</user_input>', text, re.DOTALL)
                 if m_tag:
-                    return m_tag.group(1).strip()
-                return text
+                    text = m_tag.group(1).strip()
+                cleaned = _clean_system_reminders(text)
+                if cleaned:
+                    return cleaned
     return ""
 
 
@@ -2503,6 +2575,7 @@ def _handle_official_api_chat(
                     "You are a coding subagent. Execute the task using the provided tools. "
                     "Be thorough. Synthesize findings into concise facts. Quote at most 2-3 key "
                     "code lines. NEVER copy raw tool dumps with line-number prefixes like '120→'. "
+                    "Invoke tools individually with proper XML tags. NEVER concatenate unclosed tags like <glob>...<grep>. "
                     "Do not chat — just do the task."
                 )})
         elif role == "user":
@@ -3034,33 +3107,46 @@ def _chat_completions_impl(req: ChatRequest, raw_request: Request):
         state["stream_aborted"] = False
         state["incomplete_count"] = 0
         resume = False
+    if resume and state:
+        # Jeśli liczba wiadomości spadła do <= 2, a wcześniej było więcej, to użytkownik otworzył nowy czat w Trae!
+        if len(req.messages) <= 2 and state.get("msgs_len", 0) > 2:
+            print(f"[NEW CHAT DETECTED] req.messages={len(req.messages)} <= 2 while state msgs_len={state.get('msgs_len')} -> starting fresh DS session", flush=True)
+            resume = False
+            state = None
+            with _conv_lock:
+                _conv_state.pop(conv_key, None)
+                _save_conv_state()
+
     if resume:
         chat_id = state["ds_session"]
         parent_id = state["parent_id"]
-        # ROTACJA WYŁĄCZONA (2026-08-15): kontynuujemy ZAWSZE w tej samej sesji DeepSeek.
-        # Nowa sesja powstaje TYLKO gdy użytkownik zacznie nową rozmowę w Trae (nowy conv_key).
-        # Duży prompt (system + schematy narzędzi) wysyłamy tylko na starcie; tu wysyłamy
-        # wyłącznie nowe wiadomości (user + wyniki tooli) — bez schematów, bez celu.
+        # Kontynuujemy w tej samej sesji DeepSeek.
+        # Wysyłamy wyłącznie nowe wiadomości użytkownika i wyniki narzędzi (bez powtarzania asystenta i bez schematów).
         if len(req.messages) == state["msgs_len"]:
             # RETRY / kontynuacja po niepełnym strumieniu: wyślij tylko ostatnią wiadomość
-            new_msgs = [m for m in req.messages[-1:] if m.get("role") != "system"]
+            new_msgs = [m for m in req.messages[-1:] if m.get("role") in ("user", "tool")]
+            if not new_msgs:
+                new_msgs = [m for m in req.messages[-1:] if m.get("role") != "system"]
             print(f"[RESUME] RETRY/continue (same msgs_len={state['msgs_len']}), last msg only", flush=True)
             prompt = _build_prompt(new_msgs, tools=None, state=state)
         elif len(req.messages) > state["msgs_len"]:
-            # Normalny resume: tylko nowe wiadomości (bez system, bez schematów narzędzi)
-            new_msgs = [m for m in req.messages[state["msgs_len"]:] if m.get("role") != "system"]
+            # Normalny resume: tylko nowe wiadomości użytkownika i narzędzi (bez powtarzania asystenta)
+            new_msgs = [m for m in req.messages[state["msgs_len"]:] if m.get("role") in ("user", "tool")]
+            if not new_msgs:
+                new_msgs = [m for m in req.messages[-1:] if m.get("role") != "system"]
             existing_goal = state.get("original_task_goal", "")
             if not existing_goal:
                 new_goal = extract_goals_from_messages(new_msgs)
                 if new_goal:
                     state["original_task_goal"] = new_goal
                     print(f"[GOAL] RESUME: set goal from new msgs", flush=True)
-            print(f"[RESUME] ds_session={chat_id} account={account_idx} parent={parent_id} skip={state['msgs_len']} send={len(new_msgs)} new msgs (no schemas re-injected)", flush=True)
+            print(f"[RESUME] ds_session={chat_id} account={account_idx} parent={parent_id} skip={state['msgs_len']} send={len(new_msgs)} new msgs (no schemas, no echo)", flush=True)
             prompt = _build_prompt(new_msgs, tools=None, state=state)
         else:
-            # Trae przyciął wiadomości — NIE rotujemy. Kontynuujemy w tej samej sesji,
-            # wysyłając tylko ostatnią wiadomość (DeepSeek ma już pełny kontekst po swojej stronie).
-            new_msgs = [m for m in req.messages[-1:] if m.get("role") != "system"]
+            # Trae przyciął wiadomości w trakcie aktywnego wątku
+            new_msgs = [m for m in req.messages[-1:] if m.get("role") in ("user", "tool")]
+            if not new_msgs:
+                new_msgs = [m for m in req.messages[-1:] if m.get("role") != "system"]
             print(f"[RESUME] Trae trimmed ({len(req.messages)} < {state['msgs_len']}) — continue same session, last msg only", flush=True)
             prompt = _build_prompt(new_msgs, tools=None, state=state)
     if not resume and not resume_did_full_prompt:
@@ -3146,7 +3232,7 @@ def _chat_completions_impl(req: ChatRequest, raw_request: Request):
                     "Quote at most 2-3 key code lines when evidence is needed.\n"
                     "NEVER copy raw tool dumps with line-number prefixes like '120→'.\n"
                     "Do not chat, explain, or ask questions — just do the task and report results.\n"
-                    "Use tools aggressively. Read files, search code, analyze data — whatever it takes."
+                    "TOOL CALLS: Always invoke tools individually using standard XML tags like <invoke name=\"Tool\"><parameter name=\"param\">value</parameter></invoke> or <Tool><param>val</param></Tool>. NEVER concatenate unclosed tags like <glob>...<grep>."
                 ))
                 print(f"[SUBAGENT] Real subagent detected. Prompt: {_orig_len}→{len(clean_msgs[0]['content'])} chars (saved {_orig_len - len(clean_msgs[0]['content'])})", flush=True)
             else:
@@ -3588,9 +3674,8 @@ def _chat_completions_impl(req: ChatRequest, raw_request: Request):
                                     if delim_char == '<':
                                         gt = delta.find('>')
                                         if gt != -1:
-                                            tag = delta[:gt+1]
-                                            # If it's a tool call tag or system reminder, don't advance – let _parse_tool_calls or _STRIP_TAGS handle it when complete
-                                            if re.match(r'</?\s*(?:tool_call|tool_calls|tool_capability|invoke|_call|_calls|call|calls|tool|tools|tool_use_json|parameter|system-reminder|-reminder|[|\uff5c\u2502]\s*[|\uff5c\u2502]\s*DSML|\?\?DSML\?\?|DSML|[|\uff5c\u2502]\s*tool)\b', tag, re.IGNORECASE):
+                                            # If it's a tool call tag, parameter tag, or system reminder, don't advance – let _parse_tool_calls or _STRIP_TAGS handle it when complete
+                                            if re.match(r'</?\s*(?:tool_call|tool_calls|tool_capability|invoke|_call|_calls|call|calls|tool|tools|tool_use_json|parameter|参数|參數|system-reminder|-reminder|[|\uff5c\u2502]\s*[|\uff5c\u2502]\s*DSML|\?\?DSML\?\?|DSML|[|\uff5c\u2502]\s*tool|glob|grep|read|ls|write|task|skill)\b', tag, re.IGNORECASE) or tag.startswith('<参数') or tag.startswith('</参数') or tag.startswith('<參數') or tag.startswith('</參數'):
                                                 pass
                                             else:
                                                 clean_tag = _STRIP_TAGS.sub("", tag)
@@ -3631,10 +3716,11 @@ def _chat_completions_impl(req: ChatRequest, raw_request: Request):
                 # Flush any held-back trailing text that never encountered a closing tag
                 if sent_until < len(full):
                     remaining = full[sent_until:]
-                    clean_rem = _STRIP_TAGS.sub("", remaining)
-                    if clean_rem:
-                        yield _chunk({"content": clean_rem})
-                    sent_until = len(full)
+                    if not _has_unclosed_tool_call(full) and not re.search(r'<\s*(?:[|\uff5c\u2502\s]*DSML|tool_call|invoke|_call)', remaining, re.IGNORECASE):
+                        clean_rem = _STRIP_TAGS.sub("", remaining)
+                        if clean_rem:
+                            yield _chunk({"content": clean_rem})
+                        sent_until = len(full)
                 success = True
             except GeneratorExit:
                 print(f"[DISCONNECT] Client disconnected", flush=True)
