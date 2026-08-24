@@ -290,9 +290,10 @@ def _has_unclosed_tool_call(text: str) -> bool:
     if open_invokes > close_invokes:
         return True
 
-    # 2. Rzeczywiste tagi parametrów pojedynczego narzędzia (w tym chińskie warianty 参数 / 參數)
-    open_params = len(re.findall(r'<\s*(?:[|\uff5c\u2502\s]*DSML[|\uff5c\u2502\s]*)?(?:parameter|参数|參數)\b[^>]*>', text, re.IGNORECASE))
-    close_params = len(re.findall(r'</\s*(?:[|\uff5c\u2502\s]*DSML[|\uff5c\u2502\s]*)?(?:parameter|参数|參數)\s*>', text, re.IGNORECASE))
+    # 2. Rzeczywiste tagi parametrów pojedynczego narzędzia (w tym chińskie warianty 参数 / 參數 oraz jawne tagi parametrów)
+    param_names = r'(?:parameter|参数|參數|pattern|file_path|command)'
+    open_params = len(re.findall(r'<\s*(?:[|\uff5c\u2502\s]*DSML[|\uff5c\u2502\s]*)?' + param_names + r'\b[^>]*>', text, re.IGNORECASE))
+    close_params = len(re.findall(r'</\s*(?:[|\uff5c\u2502\s]*DSML[|\uff5c\u2502\s]*)?' + param_names + r'\s*>', text, re.IGNORECASE))
     if open_params > close_params:
         return True
 
@@ -1812,6 +1813,45 @@ def _parse_tool_calls(text: str, known_tools: set | list | None = None) -> list[
                 if not any(r[0] <= span_start and r[1] >= span_end for r in results):
                     results.append((span_start, span_end, inferred_tool, json.dumps(params)))
 
+    # 1c. Orphaned direct parameter tags: e.g. <pattern>...</pattern><path>...</path>
+    known_param_names = {'pattern', 'path', 'file_path', 'content', 'command', 'query', 'description', 'subagent_type', 'offset', 'limit', 'output_mode', 'glob'}
+    param_pat_str = '|'.join(known_param_names)
+    matches_1c = list(re.finditer(rf'<\s*({param_pat_str})\b[^>]*>([\s\S]*?)</\s*\1>', text, re.IGNORECASE))
+    if matches_1c:
+        def _infer_orphaned_tool(pdict):
+            if 'pattern' in pdict:
+                return 'Grep'
+            elif 'file_path' in pdict:
+                return 'Write' if 'content' in pdict else 'Read'
+            elif 'command' in pdict:
+                return 'RunCommand'
+            elif 'query' in pdict or 'description' in pdict:
+                return 'Task'
+            elif 'path' in pdict and 'glob' in pdict:
+                return 'Glob'
+            return None
+
+        cur_params = {}
+        cur_start = None
+        cur_end = None
+        for m_1c in matches_1c:
+            k = m_1c.group(1).lower()
+            v = _parse_param_value(m_1c.group(2).strip())
+            if k in cur_params:
+                tname = _infer_orphaned_tool(cur_params)
+                if tname and not any(r[0] <= cur_start and r[1] >= cur_end for r in results):
+                    results.append((cur_start, cur_end, tname, json.dumps(cur_params)))
+                cur_params = {}
+                cur_start = None
+            if cur_start is None:
+                cur_start = m_1c.start()
+            cur_end = m_1c.end()
+            cur_params[k] = v
+        if cur_params:
+            tname = _infer_orphaned_tool(cur_params)
+            if tname and not any(r[0] <= cur_start and r[1] >= cur_end for r in results):
+                results.append((cur_start, cur_end, tname, json.dumps(cur_params)))
+
     # 2. DSML variant: < | | DSML | | name="ToolName"> ... </ | | DSML | | > or <DSML name="...">
     for m in re.finditer(r'''<(?:\s*[|\uff5c\u2502]\s*[|\uff5c\u2502]\s*)?DSML(?:\s*[|\uff5c\u2502]\s*[|\uff5c\u2502]\s*)?\s*name=(["'])([^"']*?)\1>(.*?)</(?:\s*[|\uff5c\u2502]\s*[|\uff5c\u2502]\s*)?DSML(?:\s*[|\uff5c\u2502]\s*[|\uff5c\u2502]\s*)?>''', text, re.DOTALL | re.IGNORECASE):
         name = m.group(2)
@@ -2039,7 +2079,7 @@ _STRIP_TAGS = re.compile(
     r"<tool_result[^>]*>.*?</tool_result>|</?tool_result[^>]*>|"
     r"<result[^>]*>|</result>|<status[^>]*>.*?</status>|"
     r"</?thinking[^>]*>|<tool_use_json[^>]*>.*?</tool_use_json>|"
-    r"</?(?:parameter|参数|參數)[^>]*>|"
+    r"</?(?:parameter|参数|參數|pattern|path|file_path|content|command|query|description|subagent_type|output_mode)[^>]*>|"
     r"<[|\uff5c\u2502\s]*tool\s*call\s*begin[|\uff5c\u2502\s]*>.*?<[|\uff5c\u2502\s]*tool\s*call\s*end[|\uff5c\u2502\s]*>|"
     r"</?[|\uff5c\u2502\s]*tool[_\s]*calls?\s*(?:begin|end)?[|\uff5c\u2502\s]*>|"
     r"<tool_call[^>]*>.*?</tool_calls?>|"
@@ -3675,7 +3715,7 @@ def _chat_completions_impl(req: ChatRequest, raw_request: Request):
                                         gt = delta.find('>')
                                         if gt != -1:
                                             # If it's a tool call tag, parameter tag, or system reminder, don't advance – let _parse_tool_calls or _STRIP_TAGS handle it when complete
-                                            if re.match(r'</?\s*(?:tool_call|tool_calls|tool_capability|invoke|_call|_calls|call|calls|tool|tools|tool_use_json|parameter|参数|參數|system-reminder|-reminder|[|\uff5c\u2502]\s*[|\uff5c\u2502]\s*DSML|\?\?DSML\?\?|DSML|[|\uff5c\u2502]\s*tool|glob|grep|read|ls|write|task|skill)\b', tag, re.IGNORECASE) or tag.startswith('<参数') or tag.startswith('</参数') or tag.startswith('<參數') or tag.startswith('</參數'):
+                                            if re.match(r'</?\s*(?:tool_call|tool_calls|tool_capability|invoke|_call|_calls|call|calls|tool|tools|tool_use_json|parameter|参数|參數|pattern|file_path|content|command|system-reminder|-reminder|[|\uff5c\u2502]\s*[|\uff5c\u2502]\s*DSML|\?\?DSML\?\?|DSML|[|\uff5c\u2502]\s*tool|glob|grep|read|ls|write|task|skill)\b', tag, re.IGNORECASE) or tag.startswith('<参数') or tag.startswith('</参数') or tag.startswith('<參數') or tag.startswith('</參數'):
                                                 pass
                                             else:
                                                 clean_tag = _STRIP_TAGS.sub("", tag)

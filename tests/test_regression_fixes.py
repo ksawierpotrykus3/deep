@@ -158,3 +158,20 @@ def test_parse_tool_calls_chinese_parameters():
     assert parsed["description"] == "Wyodrębnij specyfikację"
     assert parsed["query"] == "Przeczytaj pliki"
     assert parsed["subagent_type"] == "search"
+
+
+def test_parse_tool_calls_orphaned_pattern_tags():
+    """_parse_tool_calls must extract direct <pattern>...</pattern><path>...</path> tags as Grep."""
+    raw = (
+        '<pattern>[ąćęłńóśźżĄĆĘŁŃÓŚŹŻ]</pattern>\n'
+        '<path>c:\\Users\\Ksawier\\Pictures\\Screenshots\\Projekty_zlecenia\\Last_Z_BOT</path>\n\n'
+        '<pattern>^\\s*(#|;|::|rem\\s)</pattern>\n'
+        '<path>c:\\Users\\Ksawier\\Pictures\\Screenshots\\Projekty_zlecenia\\Last_Z_BOT</path>'
+    )
+    calls = server._parse_tool_calls(raw)
+    assert len(calls) == 2
+    assert calls[0][2] == "Grep"
+    assert json.loads(calls[0][3])["pattern"] == "[ąćęłńóśźżĄĆĘŁŃÓŚŹŻ]"
+    assert json.loads(calls[0][3])["path"] == "c:\\Users\\Ksawier\\Pictures\\Screenshots\\Projekty_zlecenia\\Last_Z_BOT"
+    assert calls[1][2] == "Grep"
+    assert json.loads(calls[1][3])["pattern"] == "^\\s*(#|;|::|rem\\s)"
