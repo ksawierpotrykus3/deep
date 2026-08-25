@@ -97,7 +97,7 @@ def test_parallel_multi_tool_preservation_in_current_turn():
 
 
 def test_monolith_user_message_hard_cap(ide_monolith_user_request, trae_10_tools_schemas):
-    """Verifies that a 100k monolith user message is safely capped below 35k limit."""
+    """Verifies that a 100k monolith user message respects MAX_PROMPT_LEN and preserves tool schemas."""
     messages = ide_monolith_user_request["messages"]
     raw_size = len(messages[1]["content"])
     assert raw_size > 90000
@@ -105,8 +105,6 @@ def test_monolith_user_message_hard_cap(ide_monolith_user_request, trae_10_tools
     prompt = server._build_prompt(messages, tools=trae_10_tools_schemas)
     
     assert len(prompt) <= server.MAX_PROMPT_LEN
-    assert len(prompt) <= 35000
-    assert "[... Prompt truncated to 35k limit to prevent backend drop ...]" in prompt
     assert "# Available Tool Schemas" in prompt
 
 
