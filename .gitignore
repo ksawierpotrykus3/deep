@@ -11,5 +11,10 @@ conv_state*.json
 proxy_output.log
 server_stdout.log
 server_stderr.log
+leaks.log
+data/leaks.log
+data/*.log
+data/*.jsonl
+data/crashed_chats/
 _port_pid.txt
 _pyinfo.txt
