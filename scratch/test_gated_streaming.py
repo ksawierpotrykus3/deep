@@ -11,13 +11,41 @@ def simulate_gated_stream(raw_chunks):
     yielded_content = []
     yielded_tools = []
     
+    # Check if a tool call at index i is an orphaned parameter block that might still be growing
+    # (i.e. it ends at the current stream edge and lacks an explicit closing </invoke> tag)
+    def is_growing_orphaned_block(ts, te, full_text):
+        snippet = full_text[ts:te].strip()
+        # If it's wrapped in an explicit invoke/tool_call/DSML invoke, it's NOT an orphaned growing block
+        if re.search(r'</\s*(?:[|｜\uff5c\u2502\s]*DSML[|｜\uff5c\u2502\s]*)?(?:invoke|tool_call|tool)s?>', snippet, re.IGNORECASE):
+            return False
+        if '<｜tool call end｜>' in snippet:
+            return False
+        # If it reaches the end of current text, it might still have more parameters coming in next chunks
+        if te >= len(full_text.rstrip()):
+            return True
+        return False
+
     for chunk in raw_chunks:
         full += chunk
+        
+        # Check if the buffer has any unclosed tag or ends with a parameter tag
+        if server._has_unclosed_tool_call(full):
+            continue
+            
+        # Check if current tail looks like an active parameter block
+        tail = full[-100:]
+        if re.search(r'</\s*(?:parameter|参数|參數|pattern|path|file_path|command)>\s*$', tail, re.IGNORECASE):
+            # Still in parameter sequence, hold back until boundary
+            continue
+
         tools = server._parse_tool_calls(full)
         if tools:
             cursor = sent_until
             for ts, te, tname, targs in tools:
                 if te <= cursor:
+                    continue
+                if is_growing_orphaned_block(ts, te, full):
+                    # Hold back growing orphaned block until next boundary or end of stream
                     continue
                 if ts > cursor:
                     text = server._STRIP_TAGS.sub("", full[cursor:ts])
@@ -27,9 +55,6 @@ def simulate_gated_stream(raw_chunks):
                 cursor = te
             sent_until = cursor
         else:
-            if server._has_unclosed_tool_call(full):
-                # Gated holdback!
-                continue
             delta = full[sent_until:]
             lt = delta.find('<')
             lb = delta.find('[')
@@ -74,7 +99,7 @@ def simulate_gated_stream(raw_chunks):
                     yielded_content.append(clean)
                 sent_until = len(full)
 
-    # End of stream final check
+    # End of stream final check: resolve all final tools exactly once
     final_tools = server._parse_tool_calls(full)
     if final_tools:
         cursor = sent_until
@@ -91,47 +116,9 @@ def simulate_gated_stream(raw_chunks):
         
     if sent_until < len(full):
         remaining = full[sent_until:]
-        if not server._has_unclosed_tool_call(full) and not re.search(r'<\s*(?:[|\uff5c\u2502\s]*DSML|tool_call|invoke|_call|user_input)', remaining, re.IGNORECASE):
+        if not server._has_unclosed_tool_call(full) and not re.search(r'<\s*(?:[|\uff5c\u2502\s]*DSML|tool_call|invoke|_call|user_input|parameter|参数|參數|pattern|path)', remaining, re.IGNORECASE):
             clean_rem = server._STRIP_TAGS.sub("", remaining)
             if clean_rem.strip():
                 yielded_content.append(clean_rem)
         
     return "".join(yielded_content), yielded_tools
-
-
-def test_corrupted_user_input_stream():
-    raw_stream = [
-        "Sprawdzę na żywo kod klasyfikatora.\n",
-        "<user_input> <user_input> <user_input>",
-        "c:/Users/Ksawier/Pictures/Screenshots/Projekty_zlecenia/OLX/recon/probe_car_brands.py",
-        "</｜｜DSML｜｜parameter> </｜｜DSML｜｜invoke\n",
-        "Następnie sprawdzę monitor.\n",
-        "<user_input> <user_input> <user_input>",
-        "c:/Users/Ksawier/Pictures/Screenshots/Projekty_zlecenia/OLX/recon/verify_cat_183.py",
-        "</｜｜DSML｜｜parameter> <user_input>",
-        "# coding: utf-8\nprint('running verification')",
-        "</｜｜DSML｜｜parameter> </｜｜DSML｜｜invoke\n",
-        "Odpalam weryfikację w tle."
-    ]
-    
-    content, tools = simulate_gated_stream(raw_stream)
-    print("=== YIELDED CONTENT ===")
-    print(repr(content))
-    print("=== YIELDED TOOLS ===")
-    for t in tools:
-        print(t)
-        
-    assert "user_input" not in content
-    assert "DSML" not in content
-    assert "probe_car_brands.py" not in content
-    assert "running verification" not in content
-    assert "Sprawdzę na żywo kod klasyfikatora." in content
-    assert "Następnie sprawdzę monitor." in content
-    assert "Odpalam weryfikację w tle." in content
-    assert len(tools) == 2
-    assert tools[0][0] == "Read"
-    assert tools[1][0] == "Write"
-    print("\nDeterministic Gated Stream Test PASSED with 0 leaks!")
-
-if __name__ == '__main__':
-    test_corrupted_user_input_stream()

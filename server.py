@@ -3706,6 +3706,16 @@ def _chat_completions_impl(req: ChatRequest, raw_request: Request):
                         return
 
             try:
+                def _is_growing_orphaned_block(ts, te, full_text):
+                    snippet = full_text[ts:te].strip()
+                    if re.search(r'</\s*(?:[|｜\uff5c\u2502\s]*DSML[|｜\uff5c\u2502\s]*)?(?:invoke|tool_call|tool)s?>', snippet, re.IGNORECASE):
+                        return False
+                    if '<｜tool call end｜>' in snippet:
+                        return False
+                    if te >= len(full_text.rstrip()):
+                        return True
+                    return False
+
                 for chunk in _stream_source():
                     if chunk is _HEARTBEAT_SENTINEL:
                         # Bug 26: podtrzymuj polaczenie SSE podczas ciszy (myslenie/CoT)
@@ -3715,28 +3725,31 @@ def _chat_completions_impl(req: ChatRequest, raw_request: Request):
                     if chunk:
                         monitor.token(watermark_uuid)
                         full += chunk
+
+                        if _has_unclosed_tool_call(full):
+                            continue
+
+                        tail = full[-100:]
+                        if re.search(r'</\s*(?:parameter|参数|參數|pattern|path|file_path|command)>\s*$', tail, re.IGNORECASE):
+                            continue
+
                         tools = _parse_tool_calls(full)
                         if tools:
                             cursor = sent_until
                             for ts, te, tname, targs in tools:
                                 if te <= cursor:
                                     continue
+                                if _is_growing_orphaned_block(ts, te, full):
+                                    continue
                                 if ts > cursor:
                                     text = _STRIP_TAGS.sub("", full[cursor:ts])
-                                    print(f"[YIELD] text[{cursor}:{ts}] -> {repr(text[:100])}", flush=True)
-                                    yield _chunk({"content": text})
+                                    if text:
+                                        print(f"[YIELD] text[{cursor}:{ts}] -> {repr(text[:100])}", flush=True)
+                                        yield _chunk({"content": text})
                                 print(f"[TC] {tname}({targs[:80]})  span=({ts},{te})", flush=True)
-                                # Debug: verify targs deserializes correctly
-                                try:
-                                    j = json.loads(targs)
-                                    for pk, pv in j.items():
-                                        print(f"[TC]  param '{pk}': {type(pv).__name__} = {repr(pv)[:100]}", flush=True)
-                                except Exception as e:
-                                    print(f"[TC]  WARNING targs not valid JSON: {e}", flush=True)
                                 tc_id = f"call_{uuid.uuid4().hex[:12]}"
                                 yield _chunk({"tool_calls": [{"index": tools_yielded, "id": tc_id, "type": "function", "function": {"name": tname, "arguments": targs}}]})
                                 tools_yielded += 1
-                                # — DebounceHook: zapisz wywołanie narzędzia w conv_state —
                                 try:
                                     targs_dict = json.loads(targs) if isinstance(targs, str) else targs
                                     record_tool_call(state or {}, tname, targs_dict, len(req.messages))
@@ -3745,60 +3758,55 @@ def _chat_completions_impl(req: ChatRequest, raw_request: Request):
                                 cursor = te
                             sent_until = cursor
                         else:
-                            if _has_unclosed_tool_call(full):
-                                # Gated holdback: buffer is in the middle of generating a tool call/parameter
-                                pass
-                            else:
-                                delta = full[sent_until:]
-                                lt = delta.find('<')
-                                lb = delta.find('[')
-                                ld = delta.find('|')
-                                cand_pos = [p for p in (lt, lb, ld) if p != -1]
-                                first_delim = min(cand_pos) if cand_pos else -1
+                            delta = full[sent_until:]
+                            lt = delta.find('<')
+                            lb = delta.find('[')
+                            ld = delta.find('|')
+                            cand_pos = [p for p in (lt, lb, ld) if p != -1]
+                            first_delim = min(cand_pos) if cand_pos else -1
 
-                                if first_delim != -1:
-                                    safe = delta[:first_delim]
-                                    clean = _STRIP_TAGS.sub("", safe)
-                                    if clean:
-                                        print(f"[YIELD] text before delimiter: {repr(clean[:100])}", flush=True)
-                                        yield _chunk({"content": clean})
-                                    if first_delim > 0:
-                                        sent_until = sent_until + first_delim
-                                    else:
-                                        delim_char = delta[0]
-                                        if delim_char == '<':
-                                            gt = delta.find('>')
-                                            if gt != -1:
-                                                tag = delta[:gt+1]
-                                                clean_tag = _STRIP_TAGS.sub("", tag)
-                                                if clean_tag:
-                                                    yield _chunk({"content": clean_tag})
-                                                sent_until += gt + 1
-                                            else:
-                                                # Partial tag, wait for '>'
-                                                pass
-                                        elif delim_char == '[':
-                                            rb = delta.find(']')
-                                            if rb != -1:
-                                                bracket_tag = delta[:rb+1]
-                                                clean_bracket = _STRIP_TAGS.sub("", bracket_tag)
-                                                if clean_bracket:
-                                                    yield _chunk({"content": clean_bracket})
-                                                sent_until += rb + 1
-                                            else:
-                                                pass
-                                        elif delim_char == '|':
-                                            if re.match(r'^[|\uff5c\u2502\s]*DSML', delta):
-                                                pass  # Wait for DSML block to finish
-                                            else:
-                                                yield _chunk({"content": "|"})
-                                                sent_until += 1
+                            if first_delim != -1:
+                                safe = delta[:first_delim]
+                                clean = _STRIP_TAGS.sub("", safe)
+                                if clean:
+                                    print(f"[YIELD] text before delimiter: {repr(clean[:100])}", flush=True)
+                                    yield _chunk({"content": clean})
+                                if first_delim > 0:
+                                    sent_until = sent_until + first_delim
                                 else:
-                                    clean = _STRIP_TAGS.sub("", delta)
-                                    if clean:
-                                        print(f"[YIELD] text from delta: {repr(clean[:100])}", flush=True)
-                                        yield _chunk({"content": clean})
-                                    sent_until = len(full)
+                                    delim_char = delta[0]
+                                    if delim_char == '<':
+                                        gt = delta.find('>')
+                                        if gt != -1:
+                                            tag = delta[:gt+1]
+                                            clean_tag = _STRIP_TAGS.sub("", tag)
+                                            if clean_tag:
+                                                yield _chunk({"content": clean_tag})
+                                            sent_until += gt + 1
+                                        else:
+                                            pass
+                                    elif delim_char == '[':
+                                        rb = delta.find(']')
+                                        if rb != -1:
+                                            bracket_tag = delta[:rb+1]
+                                            clean_bracket = _STRIP_TAGS.sub("", bracket_tag)
+                                            if clean_bracket:
+                                                yield _chunk({"content": clean_bracket})
+                                            sent_until += rb + 1
+                                        else:
+                                            pass
+                                    elif delim_char == '|':
+                                        if re.match(r'^[|\uff5c\u2502\s]*DSML', delta):
+                                            pass
+                                        else:
+                                            yield _chunk({"content": "|"})
+                                            sent_until += 1
+                            else:
+                                clean = _STRIP_TAGS.sub("", delta)
+                                if clean:
+                                    print(f"[YIELD] text from delta: {repr(clean[:100])}", flush=True)
+                                    yield _chunk({"content": clean})
+                                sent_until = len(full)
 
                 # End-of-stream final check for any late resolved tool calls
                 if sent_until < len(full):
@@ -3821,7 +3829,7 @@ def _chat_completions_impl(req: ChatRequest, raw_request: Request):
                 # Flush any held-back trailing text that is confirmed not to be a tool call
                 if sent_until < len(full):
                     remaining = full[sent_until:]
-                    if not _has_unclosed_tool_call(full) and not re.search(r'<\s*(?:[|\uff5c\u2502\s]*DSML|tool_call|invoke|_call|user_input)', remaining, re.IGNORECASE):
+                    if not _has_unclosed_tool_call(full) and not re.search(r'<\s*(?:[|\uff5c\u2502\s]*DSML|tool_call|invoke|_call|user_input|parameter|参数|參數|pattern|path)', remaining, re.IGNORECASE):
                         clean_rem = _STRIP_TAGS.sub("", remaining)
                         if clean_rem:
                             yield _chunk({"content": clean_rem})
