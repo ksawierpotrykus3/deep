@@ -1874,7 +1874,10 @@ def _parse_tool_calls(text: str, known_tools: set | list | None = None) -> list[
         inferred = None
         args = {}
         if len(vals) == 1:
-            if re.search(r'\.[a-zA-Z0-9_-]+$', vals[0]) or ':/' in vals[0] or ':\\' in vals[0]:
+            if vals[0].startswith('python ') or vals[0].startswith('npm ') or vals[0].startswith('pytest ') or vals[0].startswith('git ') or vals[0].startswith('pip '):
+                inferred = "RunCommand"
+                args = {"command": vals[0]}
+            elif re.search(r'\.[a-zA-Z0-9_-]+$', vals[0]) or ':/' in vals[0] or ':\\' in vals[0]:
                 inferred = "Read"
                 args = {"file_path": vals[0]}
         elif len(vals) >= 2:
