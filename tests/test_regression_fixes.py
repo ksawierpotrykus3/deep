@@ -195,3 +195,21 @@ def test_parse_tool_calls_corrupted_dsml_user_input():
     cleaned = server._clean_text(raw)
     assert "<user_input>" not in cleaned
     assert "DSML" not in cleaned
+
+
+def test_auto_continue_heartbeat_sentinel_handling():
+    """Verify that _HEARTBEAT_SENTINEL inside auto-continue generator does not cause TypeError."""
+    cont_gen = iter([server._HEARTBEAT_SENTINEL, " kontynuacja tekstu ", server._HEARTBEAT_SENTINEL, "narzedzia"])
+    content_buffer = "poczatek "
+    yielded = []
+    for tok in cont_gen:
+        if tok is server._HEARTBEAT_SENTINEL:
+            yielded.append(tok)
+            continue
+        if tok and isinstance(tok, str):
+            content_buffer += tok
+            yielded.append(tok)
+    
+    assert content_buffer == "poczatek  kontynuacja tekstu narzedzia"
+    assert len(yielded) == 4
+    assert server._HEARTBEAT_SENTINEL in yielded

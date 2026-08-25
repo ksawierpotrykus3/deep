@@ -533,7 +533,8 @@ class DeepSeek:
                           max_tokens: int = 8192, temperature: float = 1.0, top_p: float = 1.0,
                           model_type: str = "expert", ref_file_ids: list[str] | None = None,
                           thinking_enabled: bool = True, search_enabled: bool = False,
-                          _retry: int = 0, _auto_continue_budget: int = 2):
+                          _retry: int = 0, _auto_continue_budget: int = 2,
+                          watermark_uuid: str | None = None):
         if _retry > 0:
             print(f"[RETRY] Attempt {_retry} for session={chat_session_id[:12]}...", flush=True)
         from curl_cffi.requests.exceptions import RequestException as CurlError
@@ -650,7 +651,7 @@ class DeepSeek:
                 with self._pow_lock:
                     self._cached_pow.pop(account_idx, None)
                     self._pow_expires.pop(account_idx, 0)
-                return self.stream_completion(account_idx, chat_session_id, prompt, parent_message_id, max_tokens=max_tokens, temperature=temperature, top_p=top_p, model_type=model_type, ref_file_ids=ref_file_ids, thinking_enabled=thinking_enabled, search_enabled=search_enabled, _retry=_retry+1)
+                return self.stream_completion(account_idx, chat_session_id, prompt, parent_message_id, max_tokens=max_tokens, temperature=temperature, top_p=top_p, model_type=model_type, ref_file_ids=ref_file_ids, thinking_enabled=thinking_enabled, search_enabled=search_enabled, _retry=_retry+1, watermark_uuid=watermark_uuid)
 
         if rate_limit_detected:
             _rate_limited_until[account_idx] = time.time() + 120
@@ -661,7 +662,7 @@ class DeepSeek:
             _rate_limited_until[account_idx] = time.time() + wait + 10
             print(f"[RETRY] Preamble rate-limited (attempt {_retry+1}), waiting {wait}s...", flush=True)
             time.sleep(wait)
-            return self.stream_completion(account_idx, chat_session_id, prompt, parent_message_id, max_tokens=max_tokens, temperature=temperature, top_p=top_p, model_type=model_type, ref_file_ids=ref_file_ids, thinking_enabled=thinking_enabled, search_enabled=search_enabled, _retry=_retry+1)
+            return self.stream_completion(account_idx, chat_session_id, prompt, parent_message_id, max_tokens=max_tokens, temperature=temperature, top_p=top_p, model_type=model_type, ref_file_ids=ref_file_ids, thinking_enabled=thinking_enabled, search_enabled=search_enabled, _retry=_retry+1, watermark_uuid=watermark_uuid)
         resp_msg_id = int(resp_msg_id) if resp_msg_id else None
         if preamble_data_count == 0:
             print(f"[WARN] No data lines from DeepSeek for session={chat_session_id} parent={parent_message_id}", flush=True)
@@ -697,13 +698,17 @@ class DeepSeek:
                     response_started = True
                 if response_started:
                     content_buffer += text
+                    if watermark_uuid:
+                        monitor.token(watermark_uuid)
                     inc = content_buffer[prev_yielded:]
                     if inc:
                         prev_yielded = len(content_buffer)
                         return inc
                     return ""
-                # Faza THINK — reasoning nie wycieka do Trae.
+                # Faza THINK — reasoning nie wycieka do Trae, ale rejestruje postęp myślenia live
                 thinking_buffer += text
+                if watermark_uuid:
+                    monitor.thinking_token(watermark_uuid, count=max(1, len(text.split())))
                 return ""
 
             def _begin_phase(ftype, fcontent):
@@ -713,12 +718,16 @@ class DeepSeek:
                 if ftype == "THINK":
                     thinking_active = True
                     response_started = False
+                    if watermark_uuid:
+                        monitor.thinking_token(watermark_uuid, count=len(fcontent.split()) if fcontent else 1)
                     if fcontent:
                         thinking_buffer += fcontent
                     return ""
                 if ftype == "RESPONSE":
                     thinking_active = False
                     response_started = True
+                    if watermark_uuid:
+                        monitor.token(watermark_uuid)
                     if fcontent:
                         content_buffer += fcontent
                         inc = content_buffer[prev_yielded:]
@@ -771,7 +780,7 @@ class DeepSeek:
                         _rate_limited_until[account_idx] = time.time() + wait + 10
                         print(f"[RETRY] Rate-limited (attempt {_retry+1}, reason={fr_raw}), waiting {wait}s...", flush=True)
                         time.sleep(wait)
-                        retry_result = self.stream_completion(account_idx, chat_session_id, prompt, parent_message_id, max_tokens=max_tokens, temperature=temperature, top_p=top_p, model_type=model_type, ref_file_ids=ref_file_ids, thinking_enabled=thinking_enabled, search_enabled=search_enabled, _retry=_retry+1)
+                        retry_result = self.stream_completion(account_idx, chat_session_id, prompt, parent_message_id, max_tokens=max_tokens, temperature=temperature, top_p=top_p, model_type=model_type, ref_file_ids=ref_file_ids, thinking_enabled=thinking_enabled, search_enabled=search_enabled, _retry=_retry+1, watermark_uuid=watermark_uuid)
                         if retry_result is None:
                             raise RuntimeError("Session expired during retry")
                         new_gen, retry_meta = retry_result
@@ -826,6 +835,8 @@ class DeepSeek:
                     _tok = _route_token(val)
                     if _tok:
                         yield _tok
+                    elif thinking_active:
+                        yield _HEARTBEAT_SENTINEL
                     if _detect_loop(content_buffer):
                         loop_aborted = True
                         break
@@ -834,6 +845,8 @@ class DeepSeek:
                     _tok = _route_token(val)
                     if _tok:
                         yield _tok
+                    elif thinking_active:
+                        yield _HEARTBEAT_SENTINEL
                     # Anti-loop guard: przetnij petle tokenow (loop_aborted=True)
                     if _detect_loop(content_buffer):
                         loop_aborted = True
@@ -845,6 +858,8 @@ class DeepSeek:
                             _tok = _begin_phase(fragment.get("type"), fragment.get("content") or "")
                             if _tok:
                                 yield _tok
+                            elif thinking_active:
+                                yield _HEARTBEAT_SENTINEL
                     # Anti-loop guard: przetnij petle tokenow (loop_aborted=True)
                     if _detect_loop(content_buffer):
                         loop_aborted = True
@@ -859,24 +874,21 @@ class DeepSeek:
 
             # ── Moduł 2: Transparentny Auto-Continue ──
             # Stream uciety (watchdog 60s / koniec bez FINISHED / urwany tag narzedzia)
-            # -> proxy NIE zamyka odpowiedzi do Trae, tylko wysyla "KONTYNUUJ" w tej samej
+            # -> proxy NIE zamyka odpowiedzi do Trae, tylko wysyla "kontynuuj" w tej samej
             # sesji DeepSeeka (parent = ostatnie resp_msg_id) i dokleja nowe tokeny do
-            # biezacego strumienia SSE. Tylko gdy mamy juz tresc i nie wyczerpano budzetu.
+            # biezacego strumienia SSE.
             auto_continue_count = 0
-            # Auto-continue ma sie odpalic tez, gdy strumien zakonczyl sie "normalnie"
-            # (FINISHED), ale zostal niedomkniety tag narzedzia — inaczej uciety tag
-            # wycieknie jako tekst i narzedzie nie zostanie wykonane.
-            while ((not finished_normally or _has_unclosed_tool_call(content_buffer)) and not loop_aborted and _auto_continue_budget > 0 and content_buffer.strip()):
+            while ((not finished_normally or _has_unclosed_tool_call(content_buffer)) and not loop_aborted and _auto_continue_budget > 0 and (content_buffer.strip() or thinking_buffer.strip() or resp_msg_id)):
                 _auto_continue_budget -= 1
                 auto_continue_count += 1
-                print(f"[AUTO-CONTINUE] attempt {auto_continue_count}, budget left={_auto_continue_budget}, parent={resp_msg_id} (so far {len(content_buffer)} chars)", flush=True)
+                print(f"[AUTO-CONTINUE] attempt {auto_continue_count}, budget left={_auto_continue_budget}, parent={resp_msg_id} (content={len(content_buffer)} chars, thinking={len(thinking_buffer)} chars)", flush=True)
                 try:
                     cont_res = self.stream_completion(
-                        account_idx, chat_session_id, "KONTYNUUJ", resp_msg_id,
+                        account_idx, chat_session_id, "kontynuuj", resp_msg_id,
                         max_tokens=max_tokens, temperature=temperature, top_p=top_p,
                         model_type=model_type, ref_file_ids=ref_file_ids,
                         thinking_enabled=thinking_enabled, search_enabled=search_enabled,
-                        _auto_continue_budget=_auto_continue_budget)
+                        _auto_continue_budget=_auto_continue_budget, watermark_uuid=watermark_uuid)
                 except Exception as ce:
                     print(f"[AUTO-CONTINUE] Request failed: {ce}", flush=True)
                     break
@@ -889,7 +901,10 @@ class DeepSeek:
                 cont_yielded = False
                 try:
                     for tok in cont_gen:
-                        if tok:
+                        if tok is _HEARTBEAT_SENTINEL:
+                            yield tok
+                            continue
+                        if tok and isinstance(tok, str):
                             cont_yielded = True
                             content_buffer += tok
                             yield tok
@@ -3487,7 +3502,7 @@ def _chat_completions_impl(req: ChatRequest, raw_request: Request):
                             _conv_state[conv_key] = state
                             _save_conv_state()
                     print(f"[CHUNKED INGESTION] Ingestion complete. Final chunk {len(chunks)} ({len(prompt)} chars) ready for stream (parent_id={parent_id})", flush=True)
-            result = ds.stream_completion(account_idx, chat_id, prompt, parent_id, max_tok, req.temperature, req.top_p, model_type=model_type, ref_file_ids=ref_file_ids, thinking_enabled=thinking_enabled, search_enabled=search_enabled)
+            result = ds.stream_completion(account_idx, chat_id, prompt, parent_id, max_tok, req.temperature, req.top_p, model_type=model_type, ref_file_ids=ref_file_ids, thinking_enabled=thinking_enabled, search_enabled=search_enabled, watermark_uuid=watermark_uuid)
             break
         except Exception as e:
             err_str = str(e).lower()
@@ -3631,7 +3646,7 @@ def _chat_completions_impl(req: ChatRequest, raw_request: Request):
             _slot_busy[account_idx] = True
         try:
             for chunk in stream:
-                if chunk:
+                if chunk and chunk is not _HEARTBEAT_SENTINEL and isinstance(chunk, str):
                     full_text += chunk
         except Exception as e:
             raise HTTPException(502, f"Upstream error: {str(e)}")
@@ -3721,7 +3736,7 @@ def _chat_completions_impl(req: ChatRequest, raw_request: Request):
                                         account_idx, chat_id, prompt, parent_id, max_tok,
                                         req.temperature, req.top_p, model_type=model_type,
                                         ref_file_ids=ref_file_ids, thinking_enabled=thinking_enabled,
-                                        search_enabled=search_enabled)
+                                        search_enabled=search_enabled, watermark_uuid=watermark_uuid)
                                 except Exception as _e:
                                     print(f"[MONITOR] Restart failed: {_e}", flush=True)
                                     raise GeneratorExit
