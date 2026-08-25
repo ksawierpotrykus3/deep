@@ -175,3 +175,17 @@ def test_parse_tool_calls_orphaned_pattern_tags():
     assert json.loads(calls[0][3])["path"] == "c:\\Users\\Ksawier\\Pictures\\Screenshots\\Projekty_zlecenia\\Last_Z_BOT"
     assert calls[1][2] == "Grep"
     assert json.loads(calls[1][3])["pattern"] == "^\\s*(#|;|::|rem\\s)"
+
+
+def test_parse_tool_calls_corrupted_dsml_user_input():
+    """_parse_tool_calls must extract Glob from corrupted <user_input> DSML blocks and clean text."""
+    raw = "<user_input> <user_input> <user_input>**/*</ | | DSML | | parameter> <user_input>c:/Users/Ksawier/Pictures/Screenshots/Projekty_zlecenia/OLX</ | | DSML | | parameter> </ | | DSML | | invoke"
+    calls = server._parse_tool_calls(raw)
+    assert len(calls) == 1
+    assert calls[0][2] == "Glob"
+    parsed = json.loads(calls[0][3])
+    assert parsed["pattern"] == "**/*"
+    assert parsed["path"] == "c:/Users/Ksawier/Pictures/Screenshots/Projekty_zlecenia/OLX"
+    cleaned = server._clean_text(raw)
+    assert "<user_input>" not in cleaned
+    assert "DSML" not in cleaned

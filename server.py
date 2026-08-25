@@ -1852,6 +1852,26 @@ def _parse_tool_calls(text: str, known_tools: set | list | None = None) -> list[
             if tname and not any(r[0] <= cur_start and r[1] >= cur_end for r in results):
                 results.append((cur_start, cur_end, tname, json.dumps(cur_params)))
 
+    # 1d. Corrupted tag DSML parameters: <user_input>val</ | | DSML | | parameter>
+    dsml_corrupted_pat = re.compile(
+        r'<(?:\w+)?>(.*?)</\s*(?:[|｜\uff5c\u2502\s]*DSML[|｜\uff5c\u2502\s]*)?(?:parameter|参数|參數)>',
+        re.IGNORECASE
+    )
+    matches_1d = list(dsml_corrupted_pat.finditer(text))
+    if matches_1d:
+        dsml_vals = []
+        for m_1d in matches_1d:
+            val = m_1d.group(1).strip()
+            val = re.sub(r'<[^>]*>', '', val).strip()
+            if val:
+                dsml_vals.append(val)
+        if len(dsml_vals) == 2:
+            is_path = lambda s: bool(re.search(r'^[a-zA-Z]:|^[\\/]|\.[\\/]', s)) or ('/' in s and '*' not in s)
+            if is_path(dsml_vals[1]) and not is_path(dsml_vals[0]):
+                span_start, span_end = matches_1d[0].start(), matches_1d[-1].end()
+                if not any(r[0] <= span_start and r[1] >= span_end for r in results):
+                    results.append((span_start, span_end, "Glob", json.dumps({"pattern": dsml_vals[0], "path": dsml_vals[1]})))
+
     # 2. DSML variant: < | | DSML | | name="ToolName"> ... </ | | DSML | | > or <DSML name="...">
     for m in re.finditer(r'''<(?:\s*[|\uff5c\u2502]\s*[|\uff5c\u2502]\s*)?DSML(?:\s*[|\uff5c\u2502]\s*[|\uff5c\u2502]\s*)?\s*name=(["'])([^"']*?)\1>(.*?)</(?:\s*[|\uff5c\u2502]\s*[|\uff5c\u2502]\s*)?DSML(?:\s*[|\uff5c\u2502]\s*[|\uff5c\u2502]\s*)?>''', text, re.DOTALL | re.IGNORECASE):
         name = m.group(2)
@@ -2075,7 +2095,9 @@ _STRIP_TAGS = re.compile(
     r"-reminder>[^\n]*|"
     r"<critical_directive>[\s\S]*?</critical_directive>|"
     r"</?previous_tool_call[^>]*>|"
+    r"</?user_input[^>]*>|"
     r"</?(?:[|\uff5c\u2502\s]*DSML[|\uff5c\u2502\s]*|tool_calls?|tool_capability|invoke|_calls?|[|\uff5c\u2502\s]*cl_calls?|call|tools?|center|调用|調用|工具|函数|结果|思考|glob|grep|read|ls|write|deletefile|searchreplace|task|skill|runcommand|checkcommandstatus|stopcommand|askuserquestion|notifyuser|websearch|webfetch|getdiagnostics|todowrite|openpreview|run_mcp)[^>]*>|"
+    r"</?\s*(?:[|\uff5c\u2502\s]*DSML[|\uff5c\u2502\s]*)(?:invoke|parameter|call|tool)?(?:\s*>|\b|\Z)|"
     r"<tool_result[^>]*>.*?</tool_result>|</?tool_result[^>]*>|"
     r"<result[^>]*>|</result>|<status[^>]*>.*?</status>|"
     r"</?thinking[^>]*>|<tool_use_json[^>]*>.*?</tool_use_json>|"
@@ -3715,7 +3737,7 @@ def _chat_completions_impl(req: ChatRequest, raw_request: Request):
                                         gt = delta.find('>')
                                         if gt != -1:
                                             # If it's a tool call tag, parameter tag, or system reminder, don't advance – let _parse_tool_calls or _STRIP_TAGS handle it when complete
-                                            if re.match(r'</?\s*(?:tool_call|tool_calls|tool_capability|invoke|_call|_calls|call|calls|tool|tools|tool_use_json|parameter|参数|參數|pattern|file_path|content|command|system-reminder|-reminder|[|\uff5c\u2502]\s*[|\uff5c\u2502]\s*DSML|\?\?DSML\?\?|DSML|[|\uff5c\u2502]\s*tool|glob|grep|read|ls|write|task|skill)\b', tag, re.IGNORECASE) or tag.startswith('<参数') or tag.startswith('</参数') or tag.startswith('<參數') or tag.startswith('</參數'):
+                                            if re.match(r'</?\s*(?:tool_call|tool_calls|tool_capability|invoke|_call|_calls|call|calls|tool|tools|tool_use_json|parameter|参数|參數|pattern|file_path|content|command|user_input|system-reminder|-reminder|[|\uff5c\u2502]\s*[|\uff5c\u2502]\s*DSML|\?\?DSML\?\?|DSML|[|\uff5c\u2502]\s*tool|glob|grep|read|ls|write|task|skill)\b', tag, re.IGNORECASE) or tag.startswith('<参数') or tag.startswith('</参数') or tag.startswith('<參數') or tag.startswith('</參數'):
                                                 pass
                                             else:
                                                 clean_tag = _STRIP_TAGS.sub("", tag)
