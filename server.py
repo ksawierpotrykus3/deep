@@ -1,4 +1,5 @@
 import json, time, uuid, re, hashlib, threading, os, base64, random, sys, io
+from datetime import datetime
 from pathlib import Path
 
 # Ensure UTF-8 stdout/stderr on Windows to avoid UnicodeEncodeError crashes safely in-place
@@ -31,6 +32,8 @@ CONV_STATE_FILE = Path(__file__).parent / "conv_state.json"
 MAX_ACCOUNTS = 100
 MAX_CONV_ENTRIES = 500
 MODE_FILE = Path(__file__).parent / "data" / "proxy_mode.txt"
+LEAKS_LOG_FILE = Path(__file__).parent / "data" / "leaks.log"
+WORKSPACE_LEAKS_LOG = Path(__file__).parent / "leaks.log"
 PROMPT2_FILE = Path(__file__).parent / "prompt2.txt"
 PROMPT3_FILE = Path(__file__).parent / "prompt3.txt"
 
@@ -2141,6 +2144,34 @@ _STRIP_TAGS = re.compile(
 )
 
 
+_LEAK_DETECTOR = re.compile(
+    r"</?(?:[|\uff5c\u2502\s]*DSML[|\uff5c\u2502\s]*|tool_call|invoke|_call|user_input|parameter|参数|參數|pattern|path|file_path|tool_capability)[^>]*>|"
+    r"\[(?:call:|Task:|Read:|Write:|Grep:|Glob:|RunCommand:)|"
+    r"<[|\uff5c\u2502\s]*tool\s*call|"
+    r"\{\s*\"(?:file_path|command|pattern|subagent_type)\"\s*:",
+    re.IGNORECASE
+)
+
+
+def _log_leak_if_any(content: str, full_buffer: str = "", conv_key: str = ""):
+    if not content:
+        return
+    matches = _LEAK_DETECTOR.findall(content)
+    if matches:
+        timestamp = datetime.now().isoformat()
+        sig_list = list(set(matches))
+        entry_text = f"[{timestamp}] [LEAK DETECTED] signatures={sig_list} | conv={conv_key[:24]} | content={repr(content[:300])}\n"
+        try:
+            LEAKS_LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+            with open(LEAKS_LOG_FILE, "a", encoding="utf-8") as f:
+                f.write(entry_text)
+            with open(WORKSPACE_LEAKS_LOG, "a", encoding="utf-8") as f:
+                f.write(entry_text)
+        except Exception as e:
+            print(f"[LEAK WATCHDOG] Failed to write leak log: {e}", flush=True)
+        print(f"[LEAK WATCHDOG] 🚨 RECORDED LEAK TO leaks.log: {sig_list} in {repr(content[:60])}", flush=True)
+
+
 def _clean_text(text: str) -> str:
     """Remove known XML wrapper/control tags from displayed text."""
     return _STRIP_TAGS.sub("", text).strip()
@@ -3643,6 +3674,8 @@ def _chat_completions_impl(req: ChatRequest, raw_request: Request):
     _stream_usage = {"prompt_tokens": len(prompt) // 4, "completion_tokens": 0, "total_tokens": len(prompt) // 4}
 
     def _chunk(delta: dict, fr: str | None = None) -> str:
+        if "content" in delta and delta["content"]:
+            _log_leak_if_any(delta["content"], full_buffer=full if 'full' in locals() else "", conv_key=conv_key)
         c = {"id": completion_id, "object": "chat.completion.chunk", "created": _created, "model": _model,
              "system_fingerprint": "fp_deepseek_proxy_v1",
              "choices": [{"index": 0, "delta": delta}]}
