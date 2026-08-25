@@ -178,14 +178,20 @@ def test_parse_tool_calls_orphaned_pattern_tags():
 
 
 def test_parse_tool_calls_corrupted_dsml_user_input():
-    """_parse_tool_calls must extract Glob from corrupted <user_input> DSML blocks and clean text."""
-    raw = "<user_input> <user_input> <user_input>**/*</ | | DSML | | parameter> <user_input>c:/Users/Ksawier/Pictures/Screenshots/Projekty_zlecenia/OLX</ | | DSML | | parameter> </ | | DSML | | invoke"
+    """_parse_tool_calls must extract tools from corrupted <user_input> DSML blocks and clean text."""
+    raw = (
+        "<user_input> <user_input> <user_input>c:/Users/Ksawier/Pictures/Screenshots/Projekty_zlecenia/OLX/recon/probe_car_brands.py</｜｜DSML｜｜parameter> </｜｜DSML｜｜invoke\n"
+        "<user_input> <user_input> <user_input>c:/Users/Ksawier/Pictures/Screenshots/Projekty_zlecenia/OLX/recon/verify_cat_183.py</｜｜DSML｜｜parameter> <user_input># coding: utf-8\nprint('test')</｜｜DSML｜｜parameter> </｜｜DSML｜｜invoke\n"
+        "<user_input> <user_input> <user_input>python verify_cat_183.py</｜｜DSML｜｜parameter> <user_input>c:/Users/Ksawier/Pictures/Screenshots/Projekty_zlecenia/OLX/recon</｜｜DSML｜｜parameter> <user_input>true</｜｜DSML｜｜parameter> </｜｜DSML｜｜invoke\n"
+    )
     calls = server._parse_tool_calls(raw)
-    assert len(calls) == 1
-    assert calls[0][2] == "Glob"
-    parsed = json.loads(calls[0][3])
-    assert parsed["pattern"] == "**/*"
-    assert parsed["path"] == "c:/Users/Ksawier/Pictures/Screenshots/Projekty_zlecenia/OLX"
+    assert len(calls) == 3
+    assert calls[0][2] == "Read"
+    assert json.loads(calls[0][3])["file_path"] == "c:/Users/Ksawier/Pictures/Screenshots/Projekty_zlecenia/OLX/recon/probe_car_brands.py"
+    assert calls[1][2] == "Write"
+    assert json.loads(calls[1][3])["file_path"] == "c:/Users/Ksawier/Pictures/Screenshots/Projekty_zlecenia/OLX/recon/verify_cat_183.py"
+    assert calls[2][2] == "RunCommand"
+    assert json.loads(calls[2][3])["command"] == "python verify_cat_183.py"
     cleaned = server._clean_text(raw)
     assert "<user_input>" not in cleaned
     assert "DSML" not in cleaned

@@ -1852,25 +1852,50 @@ def _parse_tool_calls(text: str, known_tools: set | list | None = None) -> list[
             if tname and not any(r[0] <= cur_start and r[1] >= cur_end for r in results):
                 results.append((cur_start, cur_end, tname, json.dumps(cur_params)))
 
-    # 1d. Corrupted tag DSML parameters: <user_input>val</ | | DSML | | parameter>
-    dsml_corrupted_pat = re.compile(
-        r'<(?:\w+)?>(.*?)</\s*(?:[|｜\uff5c\u2502\s]*DSML[|｜\uff5c\u2502\s]*)?(?:parameter|参数|參數)>',
+    # 1d. Corrupted tag DSML parameters: <user_input>val</ | | DSML | | parameter> ... </ | | DSML | | invoke>
+    invoke_block_pat = re.compile(
+        r'''((?:<\s*user_input\s*>\s*)+[\s\S]*?</\s*(?:[|｜\uff5c\u2502\s]*DSML[|｜\uff5c\u2502\s]*)?invoke\s*>?)''',
         re.IGNORECASE
     )
-    matches_1d = list(dsml_corrupted_pat.finditer(text))
-    if matches_1d:
-        dsml_vals = []
-        for m_1d in matches_1d:
-            val = m_1d.group(1).strip()
-            val = re.sub(r'<[^>]*>', '', val).strip()
-            if val:
-                dsml_vals.append(val)
-        if len(dsml_vals) == 2:
-            is_path = lambda s: bool(re.search(r'^[a-zA-Z]:|^[\\/]|\.[\\/]', s)) or ('/' in s and '*' not in s)
-            if is_path(dsml_vals[1]) and not is_path(dsml_vals[0]):
-                span_start, span_end = matches_1d[0].start(), matches_1d[-1].end()
-                if not any(r[0] <= span_start and r[1] >= span_end for r in results):
-                    results.append((span_start, span_end, "Glob", json.dumps({"pattern": dsml_vals[0], "path": dsml_vals[1]})))
+    dsml_param_pat = re.compile(
+        r'(?:<\s*(?:\w+)?\s*>)*\s*([\s\S]*?)</\s*(?:[|｜\uff5c\u2502\s]*DSML[|｜\uff5c\u2502\s]*)?(?:parameter|参数|參數)>',
+        re.IGNORECASE
+    )
+    for bm in invoke_block_pat.finditer(text):
+        block = bm.group(1)
+        matches = list(dsml_param_pat.finditer(block))
+        vals = []
+        for m in matches:
+            v = m.group(1).strip()
+            v = re.sub(r'<\s*user_input\s*>', '', v, flags=re.IGNORECASE).strip()
+            v = re.sub(r'<\s*\w+\s*>', '', v).strip()
+            vals.append(v)
+            
+        inferred = None
+        args = {}
+        if len(vals) == 1:
+            if re.search(r'\.[a-zA-Z0-9_-]+$', vals[0]) or ':/' in vals[0] or ':\\' in vals[0]:
+                inferred = "Read"
+                args = {"file_path": vals[0]}
+        elif len(vals) >= 2:
+            first, second = vals[0], vals[1]
+            if first.startswith('python ') or first.startswith('npm ') or first.startswith('pytest ') or first.startswith('git ') or first.startswith('pip ') or (' ' in first and not first.startswith('#') and not re.search(r'^[a-zA-Z]:[\\/]', first)):
+                inferred = "RunCommand"
+                args = {"command": first, "cwd": second}
+            elif (re.search(r'\.[a-zA-Z0-9_-]+$', first) or ':/' in first or ':\\' in first) and ('\n' in second or '# coding' in second or 'import ' in second or len(second) > 50):
+                inferred = "Write"
+                args = {"file_path": first, "content": second}
+            elif '**' in first or '*' in first or (not ('/' in first or '\\' in first) and ('/' in second or '\\' in second)):
+                inferred = "Glob"
+                args = {"pattern": first, "path": second}
+            elif ':/' in second or ':\\' in second:
+                inferred = "Grep" if len(first) > 0 else "Glob"
+                args = {"pattern": first, "path": second}
+                
+        if inferred:
+            span_start, span_end = bm.start(), bm.end()
+            if not any(r[0] <= span_start and r[1] >= span_end for r in results):
+                results.append((span_start, span_end, inferred, json.dumps(args)))
 
     # 2. DSML variant: < | | DSML | | name="ToolName"> ... </ | | DSML | | > or <DSML name="...">
     for m in re.finditer(r'''<(?:\s*[|\uff5c\u2502]\s*[|\uff5c\u2502]\s*)?DSML(?:\s*[|\uff5c\u2502]\s*[|\uff5c\u2502]\s*)?\s*name=(["'])([^"']*?)\1>(.*?)</(?:\s*[|\uff5c\u2502]\s*[|\uff5c\u2502]\s*)?DSML(?:\s*[|\uff5c\u2502]\s*[|\uff5c\u2502]\s*)?>''', text, re.DOTALL | re.IGNORECASE):
