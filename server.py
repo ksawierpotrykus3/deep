@@ -3745,72 +3745,87 @@ def _chat_completions_impl(req: ChatRequest, raw_request: Request):
                                 cursor = te
                             sent_until = cursor
                         else:
-                            delta = full[sent_until:]
-                            lt = delta.find('<')
-                            lb = delta.find('[')
-                            cand_pos = [p for p in (lt, lb) if p != -1]
-                            first_delim = min(cand_pos) if cand_pos else -1
+                            if _has_unclosed_tool_call(full):
+                                # Gated holdback: buffer is in the middle of generating a tool call/parameter
+                                pass
+                            else:
+                                delta = full[sent_until:]
+                                lt = delta.find('<')
+                                lb = delta.find('[')
+                                ld = delta.find('|')
+                                cand_pos = [p for p in (lt, lb, ld) if p != -1]
+                                first_delim = min(cand_pos) if cand_pos else -1
 
-                            if first_delim != -1:
-                                safe = delta[:first_delim]
-                                clean = _STRIP_TAGS.sub("", safe)
-                                if clean:
-                                    print(f"[YIELD] text before delimiter: {repr(clean[:100])}", flush=True)
-                                    yield _chunk({"content": clean})
-                                if first_delim > 0:
-                                    sent_until = sent_until + first_delim
-                                else:
-                                    delim_char = delta[0]
-                                    if delim_char == '<':
-                                        gt = delta.find('>')
-                                        if gt != -1:
-                                            # If it's a tool call tag, parameter tag, or system reminder, don't advance – let _parse_tool_calls or _STRIP_TAGS handle it when complete
-                                            if re.match(r'</?\s*(?:tool_call|tool_calls|tool_capability|invoke|_call|_calls|call|calls|tool|tools|tool_use_json|parameter|参数|參數|pattern|file_path|content|command|user_input|system-reminder|-reminder|[|\uff5c\u2502]\s*[|\uff5c\u2502]\s*DSML|\?\?DSML\?\?|DSML|[|\uff5c\u2502]\s*tool|glob|grep|read|ls|write|task|skill)\b', tag, re.IGNORECASE) or tag.startswith('<参数') or tag.startswith('</参数') or tag.startswith('<參數') or tag.startswith('</參數'):
-                                                pass
-                                            else:
+                                if first_delim != -1:
+                                    safe = delta[:first_delim]
+                                    clean = _STRIP_TAGS.sub("", safe)
+                                    if clean:
+                                        print(f"[YIELD] text before delimiter: {repr(clean[:100])}", flush=True)
+                                        yield _chunk({"content": clean})
+                                    if first_delim > 0:
+                                        sent_until = sent_until + first_delim
+                                    else:
+                                        delim_char = delta[0]
+                                        if delim_char == '<':
+                                            gt = delta.find('>')
+                                            if gt != -1:
+                                                tag = delta[:gt+1]
                                                 clean_tag = _STRIP_TAGS.sub("", tag)
                                                 if clean_tag:
                                                     yield _chunk({"content": clean_tag})
                                                 sent_until += gt + 1
-                                        else:
-                                            # Partial tag, no '>' yet – wait if it looks like a tag start
-                                            if delta == '<' or re.match(r'</?[\s|\uff5c\u2502a-zA-Z]', delta):
-                                                pass  # Any potential tag, wait for completion
                                             else:
-                                                yield _chunk({"content": "<"})
-                                                sent_until = sent_until + 1
-                                    elif delim_char == '[':
-                                        rb = delta.find(']')
-                                        if rb != -1:
-                                            bracket_tag = delta[:rb+1]
-                                            if re.match(rf'\[\s*(?:{_CALL_MARKER}|tool_call|Task|Read|Write|Grep|Glob|LS)\b', bracket_tag, re.IGNORECASE):
-                                                pass  # Tool marker, wait for complete tool call parse
-                                            else:
+                                                # Partial tag, wait for '>'
+                                                pass
+                                        elif delim_char == '[':
+                                            rb = delta.find(']')
+                                            if rb != -1:
+                                                bracket_tag = delta[:rb+1]
                                                 clean_bracket = _STRIP_TAGS.sub("", bracket_tag)
                                                 if clean_bracket:
                                                     yield _chunk({"content": clean_bracket})
                                                 sent_until += rb + 1
-                                        else:
-                                            # Partial bracket, no ']' yet – wait if it looks like a tool marker start
-                                            if delta == '[' or re.match(rf'\[\s*(?:{_CALL_MARKER}|tool|/[|\uff5c\u2502\s]*[a-z]?|[a-zA-Z])', delta):
-                                                pass
                                             else:
-                                                yield _chunk({"content": "["})
-                                                sent_until = sent_until + 1
-                            else:
-                                clean = _STRIP_TAGS.sub("", delta)
-                                if clean:
-                                    print(f"[YIELD] text from delta: {repr(clean[:100])}", flush=True)
-                                    yield _chunk({"content": clean})
-                                sent_until = len(full)
-                # Flush any held-back trailing text that never encountered a closing tag
+                                                pass
+                                        elif delim_char == '|':
+                                            if re.match(r'^[|\uff5c\u2502\s]*DSML', delta):
+                                                pass  # Wait for DSML block to finish
+                                            else:
+                                                yield _chunk({"content": "|"})
+                                                sent_until += 1
+                                else:
+                                    clean = _STRIP_TAGS.sub("", delta)
+                                    if clean:
+                                        print(f"[YIELD] text from delta: {repr(clean[:100])}", flush=True)
+                                        yield _chunk({"content": clean})
+                                    sent_until = len(full)
+
+                # End-of-stream final check for any late resolved tool calls
+                if sent_until < len(full):
+                    final_tools = _parse_tool_calls(full)
+                    if final_tools:
+                        cursor = sent_until
+                        for ts, te, tname, targs in final_tools:
+                            if te <= cursor:
+                                continue
+                            if ts > cursor:
+                                text = _STRIP_TAGS.sub("", full[cursor:ts])
+                                if text:
+                                    yield _chunk({"content": text})
+                            tc_id = f"call_{uuid.uuid4().hex[:12]}"
+                            yield _chunk({"tool_calls": [{"index": tools_yielded, "id": tc_id, "type": "function", "function": {"name": tname, "arguments": targs}}]})
+                            tools_yielded += 1
+                            cursor = te
+                        sent_until = cursor
+
+                # Flush any held-back trailing text that is confirmed not to be a tool call
                 if sent_until < len(full):
                     remaining = full[sent_until:]
-                    if not _has_unclosed_tool_call(full) and not re.search(r'<\s*(?:[|\uff5c\u2502\s]*DSML|tool_call|invoke|_call)', remaining, re.IGNORECASE):
+                    if not _has_unclosed_tool_call(full) and not re.search(r'<\s*(?:[|\uff5c\u2502\s]*DSML|tool_call|invoke|_call|user_input)', remaining, re.IGNORECASE):
                         clean_rem = _STRIP_TAGS.sub("", remaining)
                         if clean_rem:
                             yield _chunk({"content": clean_rem})
-                        sent_until = len(full)
+                    sent_until = len(full)
                 success = True
             except GeneratorExit:
                 print(f"[DISCONNECT] Client disconnected", flush=True)
