@@ -3367,7 +3367,7 @@ def _chat_completions_impl(req: ChatRequest, raw_request: Request):
                     "Be thorough and complete. Synthesize findings into concise facts.\n"
                     "Quote at most 2-3 key code lines when evidence is needed.\n"
                     "NEVER copy raw tool dumps with line-number prefixes like '120→'.\n"
-                    "Do not chat, explain, or ask questions — just do the task and report results.\n"
+                    "Do not chat, explain, repeat the prompt, echo task instructions, list file paths, or write preambles before calling tools — invoke the tools directly and immediately.\n"
                     "TOOL CALLS: Always invoke tools individually using standard XML tags like <invoke name=\"Tool\"><parameter name=\"param\">value</parameter></invoke> or <Tool><param>val</param></Tool>. NEVER concatenate unclosed tags like <glob>...<grep>."
                 ))
                 print(f"[SUBAGENT] Real subagent detected. Prompt: {_orig_len}→{len(clean_msgs[0]['content'])} chars (saved {_orig_len - len(clean_msgs[0]['content'])})", flush=True)

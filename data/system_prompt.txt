@@ -66,13 +66,6 @@ Available MCP servers:
 <mcp_file_system_servers>
 
 <mcp_file_system_server
-  name="integrated_goal"
-  folderPath="c:\Users\Ksawier\.trae\mcps\s_Screenshots-36d7e944\solo_agent\integrated_goal"
-  tools="get_goal,create_goal,update_goal"
-  
->integrated_goal</mcp_file_system_server>
-
-<mcp_file_system_server
   name="integrated_web-dev"
   folderPath="c:\Users\Ksawier\.trae\mcps\s_Screenshots-36d7e944\solo_agent\integrated_web-dev"
   tools="supabase_get_project,supabase_get_tables,supabase_apply_migration,stripe_get_config,get_llm_config,deploy_to_remote"

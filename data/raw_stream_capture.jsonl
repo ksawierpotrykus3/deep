@@ -1,242 +1,121 @@
-{"request_message_id":35,"response_message_id":36,"model_type":"expert"}
-{"updated_at":1787318686.509012}
-{"v":{"response":{"message_id":36,"parent_id":35,"model":"","role":"ASSISTANT","thinking_enabled":true,"ban_edit":false,"ban_regenerate":false,"status":"WIP","incomplete_message":null,"accumulated_token_usage":48691,"feedback":null,"inserted_at":1787318686.4977078,"search_enabled":false,"fragments":[{"id":2,"type":"RESPONSE","content":"Git","references":[],"stage_id":1}],"conversation_mode":"DEFAULT","has_pending_fragment":false,"auto_continue":false,"search_triggered":false}}}
-{"p":"response/fragments/-1/content","o":"APPEND","v":" jest"}
-{"v":" got"}
-{"v":"owy"}
-{"v":":\n\n"}
-{"v":"-"}
-{"v":" ✅"}
-{"v":" `."}
-{"v":"git"}
-{"v":"ignore"}
-{"v":"`"}
+{"request_message_id":25,"response_message_id":26,"model_type":"expert"}
+{"updated_at":1787913338.276011}
+{"v":{"response":{"message_id":26,"parent_id":25,"model":"","role":"ASSISTANT","thinking_enabled":true,"ban_edit":false,"ban_regenerate":false,"status":"WIP","incomplete_message":null,"accumulated_token_usage":30735,"feedback":null,"inserted_at":1787913338.266155,"search_enabled":false,"fragments":[{"id":2,"type":"RESPONSE","content":"Z","references":[],"stage_id":1}],"conversation_mode":"DEFAULT","has_pending_fragment":false,"auto_continue":false,"search_triggered":false}}}
+{"p":"response/fragments/-1/content","o":"APPEND","v":"apis"}
+{"v":"ane"}
+{"v":"."}
+{"v":" D"}
+{"v":"oda"}
+{"v":"łem"}
+{"v":" sek"}
+{"v":"c"}
+{"v":"ję"}
+{"v":" „"}
+{"v":"List"}
+{"v":"a"}
+{"v":" czyn"}
+{"v":"ników"}
+{"v":" zm"}
+{"v":"ienia"}
+{"v":"ją"}
+{"v":"cych"}
+{"v":" wy"}
+{"v":"cen"}
+{"v":"ę"}
+{"v":" ("}
+{"v":"do"}
+{"v":" senior"}
+{"v":"a"}
+{"v":")\""}
+{"v":" do"}
+{"v":" ["}
+{"v":"02"}
+{"v":"_z"}
+{"v":"le"}
+{"v":"cen"}
+{"v":"ie"}
+{"v":"_now"}
+{"v":"e"}
+{"v":"_z"}
+{"v":"ad"}
+{"v":"ania"}
+{"v":".md"}
+{"v":"]("}
+{"v":"file"}
+{"v":"://"}
+{"v":"/"}
+{"v":"c"}
+{"v":":/"}
+{"v":"Users"}
+{"v":"/K"}
+{"v":"s"}
+{"v":"aw"}
+{"v":"ier"}
+{"v":"/P"}
+{"v":"ictures"}
+{"v":"/S"}
+{"v":"creens"}
+{"v":"hots"}
+{"v":"/"}
+{"v":"Pro"}
+{"v":"jek"}
+{"v":"ty"}
+{"v":"_z"}
+{"v":"le"}
+{"v":"cen"}
+{"v":"ia"}
+{"v":"/"}
+{"v":"Pa"}
+{"v":"we"}
+{"v":"ł"}
+{"v":"_sc"}
+{"v":"p"}
+{"v":"/"}
+{"v":"02"}
+{"v":"_z"}
+{"v":"le"}
+{"v":"cen"}
+{"v":"ie"}
+{"v":"_now"}
+{"v":"e"}
+{"v":"_z"}
+{"v":"ad"}
+{"v":"ania"}
+{"v":".md"}
+{"v":"),"}
+{"v":" pod"}
+{"v":"ziel"}
+{"v":"on"}
+{"v":"ą"}
+{"v":" na"}
+{"v":" "}
+{"v":"3"}
+{"v":" zad"}
+{"v":"ania"}
+{"v":" z"}
+{"v":" checkbox"}
+{"v":"ami"}
+{"v":"."}
+{"v":" Po"}
+{"v":" odpowied"}
+{"v":"zi"}
+{"v":" senior"}
+{"v":"a"}
 {"v":" z"}
 {"v":"akt"}
 {"v":"ual"}
 {"v":"iz"}
-{"v":"owany"}
-{"v":" —"}
-{"v":" wszystko"}
-{"v":" z"}
-{"v":" **"}
-{"v":"gem"}
-{"v":"ini"}
-{"v":"**"}
-{"v":" w"}
-{"v":" naz"}
-{"v":"wie"}
-{"v":" jest"}
-{"v":" wy"}
-{"v":"kl"}
-{"v":"uc"}
-{"v":"zone"}
-{"v":" ("}
-{"v":"folder"}
-{"v":" `"}
-{"v":"gem"}
-{"v":"ini"}
-{"v":"_pro"}
-{"v":"xy"}
-{"v":"/"}
-{"v":"`,"}
-{"v":" pl"}
-{"v":"ik"}
-{"v":" `"}
-{"v":"README"}
-{"v":"_T"}
-{"v":"RA"}
-{"v":"E"}
-{"v":"_G"}
-{"v":"EM"}
-{"v":"INI"}
-{"v":".md"}
-{"v":"`"}
-{"v":" też"}
-{"v":" zost"}
-{"v":"anie"}
-{"v":" wy"}
-{"v":"kl"}
-{"v":"uc"}
-{"v":"zony"}
-{"v":" przez"}
-{"v":" `"}
-{"v":"*"}
-{"v":"Gem"}
-{"v":"ini"}
-{"v":"*"}
-{"v":"`)\n"}
-{"v":"-"}
-{"v":" ✅"}
-{"v":" Autor"}
-{"v":" comm"}
-{"v":"ita"}
-{"v":":"}
-{"v":" **"}
-{"v":"Ks"}
-{"v":"aw"}
-{"v":"ier"}
-{"v":"**"}
-{"v":" (`"}
-{"v":"ks"}
-{"v":"aw"}
-{"v":"ier"}
-{"v":"@"}
-{"v":"example"}
-{"v":".com"}
-{"v":"`)\n"}
-{"v":"-"}
-{"v":" ✅"}
-{"v":" Ga"}
-{"v":"łą"}
-{"v":"ź"}
-{"v":":"}
-{"v":" **"}
-{"v":"master"}
-{"v":"**\n\n"}
-{"v":"Ter"}
-{"v":"az"}
-{"v":" dod"}
-{"v":"am"}
-{"v":" pl"}
-{"v":"iki"}
-{"v":" i"}
-{"v":" **"}
-{"v":"z"}
-{"v":"robi"}
+{"v":"uj"}
 {"v":"ę"}
-{"v":" snapshot"}
-{"v":" \""}
-{"v":"pr"}
-{"v":"zed"}
-{"v":" zmian"}
-{"v":"ami"}
-{"v":"\""}
-{"v":"**"}
-{"v":" —"}
-{"v":" po"}
-{"v":" tym"}
-{"v":" będ"}
-{"v":"zi"}
-{"v":"emy"}
-{"v":" mieć"}
-{"v":" do"}
-{"v":" cz"}
-{"v":"ego"}
+{"v":" wide"}
+{"v":"ł"}
+{"v":"ki"}
 {"v":" w"}
-{"v":"rac"}
-{"v":"ać"}
-{"v":".\n\n"}
-{"v":"<"}
-{"v":"tool"}
-{"v":"_call"}
-{"v":" name"}
-{"v":"=\""}
-{"v":"Run"}
-{"v":"Command"}
-{"v":"\">\n"}
-{"v":"<"}
-{"v":"parameter"}
-{"v":" name"}
-{"v":"=\""}
-{"v":"command"}
-{"v":"\">"}
-{"v":"git"}
-{"v":" add"}
-{"v":" -"}
-{"v":"A"}
-{"v":" ;"}
-{"v":" git"}
-{"v":" status"}
-{"v":" --"}
-{"v":"short"}
-{"v":"</"}
-{"v":"parameter"}
-{"v":">\n"}
-{"v":"<"}
-{"v":"parameter"}
-{"v":" name"}
-{"v":"=\""}
-{"v":"c"}
-{"v":"wd"}
-{"v":"\">"}
-{"v":"C"}
-{"v":":\\"}
-{"v":"Users"}
-{"v":"\\"}
-{"v":"Ks"}
-{"v":"aw"}
-{"v":"ier"}
-{"v":"\\"}
-{"v":"P"}
-{"v":"ictures"}
-{"v":"\\"}
-{"v":"S"}
-{"v":"creens"}
-{"v":"hots"}
-{"v":"\\"}
-{"v":"Pro"}
-{"v":"jek"}
-{"v":"ty"}
-{"v":"_"}
-{"v":"aut"}
-{"v":"ors"}
-{"v":"kie"}
-{"v":"\\"}
-{"v":"deep"}
-{"v":"seek"}
-{"v":"-pro"}
-{"v":"xy"}
-{"v":"-c"}
-{"v":"lean"}
-{"v":"</"}
-{"v":"parameter"}
-{"v":">\n"}
-{"v":"<"}
-{"v":"parameter"}
-{"v":" name"}
-{"v":"=\""}
-{"v":"block"}
-{"v":"ing"}
-{"v":"\">"}
-{"v":"true"}
-{"v":"</"}
-{"v":"parameter"}
-{"v":">\n"}
-{"v":"<"}
-{"v":"parameter"}
-{"v":" name"}
-{"v":"=\""}
-{"v":"command"}
-{"v":"_type"}
-{"v":"\">"}
-{"v":"short"}
-{"v":"_r"}
-{"v":"unning"}
-{"v":"_process"}
-{"v":"</"}
-{"v":"parameter"}
-{"v":">\n"}
-{"v":"<"}
-{"v":"parameter"}
-{"v":" name"}
-{"v":"=\""}
-{"v":"requires"}
-{"v":"_"}
-{"v":"appro"}
-{"v":"val"}
-{"v":"\">"}
-{"v":"false"}
-{"v":"</"}
-{"v":"parameter"}
-{"v":">\n"}
-{"v":"</"}
-{"v":"inv"}
-{"v":"oke"}
-{"v":">\n"}
-{"v":"</"}
-{"v":"tool"}
-{"v":"_c"}
-{"v":"alls"}
-{"v":">"}
-{"p":"response","o":"BATCH","v":[{"p":"accumulated_token_usage","v":49785},{"p":"quasi_status","v":"FINISHED"}]}
+{"v":" sek"}
+{"v":"cji"}
+{"v":" „"}
+{"v":"W"}
+{"v":"yc"}
+{"v":"ena"}
+{"v":"\"."}
+{"p":"response","o":"BATCH","v":[{"p":"accumulated_token_usage","v":31715},{"p":"quasi_status","v":"FINISHED"}]}

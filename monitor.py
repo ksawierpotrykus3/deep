@@ -53,7 +53,11 @@ def start(session_id: str, conv_key: str = "", is_subagent: bool = False,
             "started_at": now,
             "last_heartbeat": now,
             "last_token": now,
+            "last_progress": now,
+            "last_thinking_token": 0,
+            "thinking_tokens": 0,
             "tokens": 0,
+            "is_thinking": False,
             "finished": False,
             "ok": None,
         }
@@ -70,14 +74,29 @@ def heartbeat(session_id: str) -> None:
 
 
 def token(session_id: str) -> None:
-    """Nowy token odpowiedzi — serce bije i postęp jest."""
+    """Nowy token odpowiedzi użytkownika — serce bije i postęp jest."""
     now = time.time()
     with _lock:
         s = _sessions.get(session_id)
         if s and not s["finished"]:
             s["last_heartbeat"] = now
             s["last_token"] = now
+            s["last_progress"] = now
             s["tokens"] += 1
+            s["is_thinking"] = False
+
+
+def thinking_token(session_id: str, count: int = 1) -> None:
+    """Nowy token myślenia (reasoning) — model intensywnie myśli, postęp trwa."""
+    now = time.time()
+    with _lock:
+        s = _sessions.get(session_id)
+        if s and not s["finished"]:
+            s["last_heartbeat"] = now
+            s["last_progress"] = now
+            s["last_thinking_token"] = now
+            s["thinking_tokens"] = s.get("thinking_tokens", 0) + count
+            s["is_thinking"] = True
 
 
 def finish(session_id: str, ok: bool) -> None:
@@ -88,6 +107,7 @@ def finish(session_id: str, ok: bool) -> None:
             s["finished"] = True
             s["ok"] = bool(ok)
             s["state"] = "done"
+            s["is_thinking"] = False
         ev = _stop_events.pop(session_id, None)
         _hard_stops.pop(session_id, None)
 
@@ -126,10 +146,9 @@ def clear_stop(session_id: str) -> None:
 
 
 def sweep() -> list[str]:
-    """Auto-kill (#3): ustaw stop event na sesjach 'dead' (serce stanęło)
-    lub 'slow' za długo (bez tokenu > KILL_SLOW_AFTER, serce żyje).
-    Zwraca listę session_id, które zostały oznaczone do zabicia.
-    Idempotentne: nie ustawia eventu dwa razy na tej samej sesji."""
+    """Auto-kill: ustaw stop event na sesjach 'dead' (serce stanęło > DEAD_AFTER)
+    lub 'stalled' (brak jakiegokolwiek postępu myślenia ani odpowiedzi > KILL_SLOW_AFTER).
+    Jeśli model aktywnie myśli (thinking_tokens > 0 i postępuje), NIE jest zabijany!"""
     killed = []
     now = time.time()
     with _lock:
@@ -137,10 +156,10 @@ def sweep() -> list[str]:
             if s.get("finished"):
                 continue
             hb = s.get("last_heartbeat") or 0
-            tk = s.get("last_token") or 0
+            prog = s.get("last_progress") or s.get("last_token") or s.get("started_at") or 0
             dead = bool(hb) and (now - hb) > DEAD_AFTER
-            slow_too_long = bool(tk) and (now - tk) > KILL_SLOW_AFTER and (now - hb) <= DEAD_AFTER
-            if dead or slow_too_long:
+            stalled_too_long = bool(prog) and (now - prog) > KILL_SLOW_AFTER
+            if dead or stalled_too_long:
                 ev = _stop_events.get(sid)
                 if ev is not None and not ev.is_set():
                     ev.set()
@@ -153,11 +172,13 @@ def _derive_state(s: dict) -> str:
     if s.get("finished"):
         return "done"
     now = time.time()
-    # last_heartbeat >0: serce bije stale (heartbeat_tick), last_token to postęp
     if s.get("last_heartbeat") and (now - s["last_heartbeat"]) > DEAD_AFTER:
         return "dead"
-    if s.get("last_token") and (now - s["last_token"]) > SLOW_AFTER:
+    prog = s.get("last_progress") or s.get("last_token") or s.get("started_at") or 0
+    if prog and (now - prog) > SLOW_AFTER:
         return "slow"
+    if s.get("is_thinking"):
+        return "thinking"
     return "active"
 
 
