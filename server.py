@@ -4084,5 +4084,5 @@ if __name__ == "__main__":
         print("No accounts found. Open a SECOND CMD in this folder and run:  login_slot.bat 0")
     threading.Thread(target=_sweeper_loop, daemon=True).start()
     print("[STARTUP] Monitor sweeper started (auto-kill #3, co 5s)", flush=True)
-    print("Starting on http://localhost:4570")
-    uvicorn.run(app, host="0.0.0.0", port=4570)
+    print(f"Starting on http://localhost:{_port}")
+    uvicorn.run(app, host="0.0.0.0", port=_port)
