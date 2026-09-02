@@ -44,6 +44,21 @@ def start(session_id: str, conv_key: str = "", is_subagent: bool = False,
     """Zarejestruj nowe żądanie."""
     now = time.time()
     with _lock:
+        # BUG-017/020: auto-cancel poprzedniej aktywnej sesji dla tej samej konwersacji.
+        # Nowe żądanie (nowa tura) musi ubić poprzednie zombie, żeby nie mielić
+        # współbieżnie na tym samym koncie i nie palić tokenów w ukrytym myśleniu.
+        ck = (conv_key or "")[:24]
+        if ck:
+            for sid, s in list(_sessions.items()):
+                if sid == session_id or s.get("finished"):
+                    continue
+                if s.get("conv_key") == ck and s.get("is_subagent") == bool(is_subagent):
+                    ev = _stop_events.get(sid)
+                    if ev is not None and not ev.is_set():
+                        ev.set()
+                        _hard_stops[sid] = True
+                        s["auto_killed"] = True
+                        s["killed_reason"] = "superseded"
         _sessions[session_id] = {
             "session_id": session_id,
             "conv_key": (conv_key or "")[:24],

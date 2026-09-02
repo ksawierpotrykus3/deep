@@ -241,6 +241,15 @@ def _detect_loop(content_buffer: str, min_len: int = 500, window: int = 1500) ->
 _HEARTBEAT_SENTINEL = object()
 
 
+class _ReasoningChunk:
+    """Chunk myślenia (reasoning) — oddzielony od treści, aby warstwa wyższa mogła go
+    streamować do Trae jako delta.reasoning_content (BUG-004), zamiast zjadać w tle."""
+    __slots__ = ("text",)
+
+    def __init__(self, text: str):
+        self.text = text
+
+
 def _heartbeat_iter(gen, interval: float = 15.0):
     """Bug 26: utrzymuje zywe polaczenie SSE z Trae podczas dlugiego myslenia.
 
@@ -705,11 +714,11 @@ class DeepSeek:
                         prev_yielded = len(content_buffer)
                         return inc
                     return ""
-                # Faza THINK — reasoning nie wycieka do Trae, ale rejestruje postęp myślenia live
+                # Faza THINK — reasoning streamujemy do Trae jako reasoning_content (BUG-004)
                 thinking_buffer += text
                 if watermark_uuid:
                     monitor.thinking_token(watermark_uuid, count=max(1, len(text.split())))
-                return ""
+                return _ReasoningChunk(text)
 
             def _begin_phase(ftype, fcontent):
                 """Obsługuje deklarację fragmentu THINK/RESPONSE: ustawia fazę i emituje
@@ -722,6 +731,7 @@ class DeepSeek:
                         monitor.thinking_token(watermark_uuid, count=len(fcontent.split()) if fcontent else 1)
                     if fcontent:
                         thinking_buffer += fcontent
+                        return _ReasoningChunk(fcontent)
                     return ""
                 if ftype == "RESPONSE":
                     thinking_active = False
@@ -770,8 +780,9 @@ class DeepSeek:
                     fr_raw = str(data.get("finish_reason") or "")
                     err_lower = err_msg.lower()
                     if ("too frequent" in err_lower or "server is busy" in err_lower or "serwer jest zajęty" in err_lower
-                        or "zajęty" in err_lower or "zajety" in err_lower
-                        or "message is being generated" in err_lower or "parallel_chat_limit" in fr_raw or "busy" in fr_raw.lower()):
+                        or "zajęty" in err_lower or "zajety" in err_lower or "zbyt" in err_lower
+                        or "message is being generated" in err_lower or "parallel_chat_limit" in fr_raw or "busy" in fr_raw.lower()
+                        or "rate_limit" in fr_raw.lower()):
                         if _retry >= 1:
                             _rate_limited_until[account_idx] = time.time() + 120
                             print(f"[RETRY] Giving up fast on account={account_idx} after {_retry+1} attempts to trigger migration", flush=True)
@@ -1711,6 +1722,41 @@ def _repair_tool_call(name: str, params: dict) -> tuple[str, dict]:
     return name, params
 
 
+_NUMERIC_PARAM_KEYS = {"offset", "limit", "head_limit", "max_tokens", "max_completion_tokens", "wait_ms_before_async"}
+
+
+def _sanitize_tool_params(name: str, params: dict) -> dict:
+    """Normalizuje parametry numeryczne (BUG-021: offset=False -> deserialize params error).
+
+    - bool -> śmieć, kasuj (False nie jest poprawnym offsetem/limitem)
+    - int >= 0 -> zostaw
+    - str z cyframi (np. "60") -> konwertuj do int (NIE kasuj!)
+    - wszystko inne -> kasuj
+    """
+    if not isinstance(params, dict):
+        return params
+    out = {}
+    for k, v in params.items():
+        if k in _NUMERIC_PARAM_KEYS:
+            if isinstance(v, bool):
+                continue
+            if isinstance(v, int):
+                if v < 0:
+                    continue
+                out[k] = v
+                continue
+            if isinstance(v, str):
+                sv = v.strip()
+                try:
+                    out[k] = int(sv)
+                except ValueError:
+                    continue
+                continue
+            continue
+        out[k] = v
+    return out
+
+
 def _map_positional(name: str, body: str) -> dict:
     """Mapuje surową treść tagu narzędzia (bez zagnieżdżonych <parameter>) na argumenty.
 
@@ -1808,6 +1854,11 @@ def _parse_tool_calls(text: str, known_tools: set | list | None = None) -> list[
                 parsed_jm = _safe_json_loads(jm.group(0))
                 if isinstance(parsed_jm, dict):
                     params = parsed_jm
+        # BUG-022: surowy <content>...</content> zamiast <parameter name="content">
+        if name in ("Write", "Edit") and "content" not in params:
+            raw_content = re.search(r'<\s*content\b[^>]*>([\s\S]*?)</\s*content\s*>', body, re.IGNORECASE)
+            if raw_content:
+                params["content"] = raw_content.group(1)
         results.append((m.start(), m.end(), name, json.dumps(params) if params else "{}"))
 
     # 1b. Orphaned / unwrapped parameter blocks: <parameter name="...">... or <参数 name="...">...
@@ -2121,6 +2172,7 @@ def _parse_tool_calls(text: str, known_tools: set | list | None = None) -> list[
             params = {}
         if isinstance(params, dict):
             fixed_name, fixed_params = _repair_tool_call(name, params)
+            fixed_params = _sanitize_tool_params(fixed_name, fixed_params)
             name = fixed_name
             args_json = json.dumps(fixed_params)
         repaired.append((start, end, name, args_json))
@@ -3687,15 +3739,32 @@ def _chat_completions_impl(req: ChatRequest, raw_request: Request):
     _model = req.model
 
     _stream_usage = {"prompt_tokens": len(prompt) // 4, "completion_tokens": 0, "total_tokens": len(prompt) // 4}
+    _tokens_generated = 0
 
     def _chunk(delta: dict, fr: str | None = None) -> str:
+        nonlocal _tokens_generated
         if "content" in delta and delta["content"]:
+            _tokens_generated += max(1, len(delta["content"]) // 4)
             _log_leak_if_any(delta["content"], full_buffer=full if 'full' in locals() else "", conv_key=conv_key)
+        # BUG-023: zliczaj też reasoning i tool_calls — inaczej tura Write (kod w arguments)
+        # kończy się z completion_tokens=0 i Trae pokazuje 0% / zamrożony widok.
+        if delta.get("reasoning_content"):
+            _tokens_generated += max(1, len(delta["reasoning_content"]) // 4)
+        _tc = delta.get("tool_calls")
+        if isinstance(_tc, list):
+            for _t in _tc:
+                if isinstance(_t, dict):
+                    _fn = _t.get("function") or {}
+                    _args = _fn.get("arguments")
+                    if isinstance(_args, str):
+                        _tokens_generated += max(1, len(_args) // 4)
         c = {"id": completion_id, "object": "chat.completion.chunk", "created": _created, "model": _model,
              "system_fingerprint": "fp_deepseek_proxy_v1",
              "choices": [{"index": 0, "delta": delta}]}
         if fr is not None:
             c["choices"][0]["finish_reason"] = fr
+            _stream_usage["completion_tokens"] = _tokens_generated
+            _stream_usage["total_tokens"] = _stream_usage["prompt_tokens"] + _tokens_generated
             c["usage"] = _stream_usage
         return f"data: {json.dumps(c)}\n\n"
 
@@ -3769,6 +3838,11 @@ def _chat_completions_impl(req: ChatRequest, raw_request: Request):
                         # Bug 26: podtrzymuj polaczenie SSE podczas ciszy (myslenie/CoT)
                         monitor.heartbeat(watermark_uuid)
                         yield ": keep-alive\n\n"
+                        continue
+                    if isinstance(chunk, _ReasoningChunk):
+                        # BUG-004: streamuj myślenie na żywo jako delta.reasoning_content
+                        if chunk.text:
+                            yield _chunk({"reasoning_content": chunk.text})
                         continue
                     if chunk:
                         monitor.token(watermark_uuid)
@@ -4083,6 +4157,6 @@ if __name__ == "__main__":
     else:
         print("No accounts found. Open a SECOND CMD in this folder and run:  login_slot.bat 0")
     threading.Thread(target=_sweeper_loop, daemon=True).start()
-    print("[STARTUP] Monitor sweeper started (auto-kill #3, co 5s)", flush=True)
+    _port = int(os.environ.get("PORT", 4570))
     print(f"Starting on http://localhost:{_port}")
     uvicorn.run(app, host="0.0.0.0", port=_port)
