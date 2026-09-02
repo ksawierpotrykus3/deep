@@ -1431,6 +1431,57 @@ def _strip_dead_system_sections(msg: dict) -> dict:
     return {**msg, "content": content}
 
 
+def _build_anti_loop_guard(messages: list[dict]) -> str:
+    """Buduje notkę anty-pętlową (BUG-001/005/010/013/015): pliki już przeczytane
+    i komendy już uruchomione w historii konwersacji. Wstrzykuje ją do promptu,
+    żeby model nie czytał ponownie tych samych plików (doom-loop) i nie powtarzał
+    tych samych komend terminala (paranoja konsoli)."""
+    files_read: set[str] = set()
+    commands_run: list[str] = []
+    for msg in messages:
+        if msg.get("role") != "assistant":
+            continue
+        for call in (msg.get("tool_calls") or []):
+            if not isinstance(call, dict):
+                continue
+            fn = call.get("function") or {}
+            name = fn.get("name", "")
+            raw_args = fn.get("arguments", "{}")
+            try:
+                args = json.loads(raw_args) if isinstance(raw_args, str) else (raw_args or {})
+            except Exception:
+                args = {}
+            if not isinstance(args, dict):
+                args = {}
+            fp = args.get("file_path") or args.get("path") or args.get("filePath") or ""
+            if name in ("Read", "read", "read_file") and fp:
+                files_read.add(str(fp))
+            elif name in ("Glob", "glob", "Grep", "grep", "SearchCodebase") and fp:
+                files_read.add(str(fp))
+            elif name in ("RunCommand", "run_command", "run_command_in_terminal"):
+                cmd = args.get("command")
+                if isinstance(cmd, str) and cmd.strip():
+                    commands_run.append(cmd.strip())
+
+    if not files_read and not commands_run:
+        return ""
+
+    lines = ["## STATE GUARD (anti-loop)"]
+    if files_read:
+        lines.append("Files already read — their content is in context above, do NOT re-read:")
+        for f in sorted(files_read)[:15]:
+            lines.append(f"- {f}")
+    if commands_run:
+        deduped: list[str] = []
+        for c in commands_run:
+            if c not in deduped:
+                deduped.append(c)
+        lines.append("Shell commands already run recently — do NOT repeat them unless the result is missing:")
+        for c in deduped[-8:]:
+            lines.append(f"- {c}")
+    return "\n\n" + "\n".join(lines)
+
+
 def _build_prompt(messages: list[dict], tools: list[dict] | None = None, images: list[dict] | None = None, embed_images: bool = True, state: dict | None = None) -> str:
     msgs = list(messages)
     system = []
@@ -1587,6 +1638,11 @@ Rules:
                 break
             parts = _format_msgs(system + rest[-keep_n:], keep_images=bool(images), strip_reminders=strip_reminders)
             prompt = "\n\n".join(parts)
+
+    # ── Anti-loop guard (BUG-001/005/010/013/015) ──
+    guard = _build_anti_loop_guard(messages)
+    if guard:
+        prompt += guard
 
     # Doklejenie schematów narzędzi (ZAWSZE PEŁNYCH, NIGDY NIE UCINANYCH)
     prompt += tools_suffix
