@@ -4096,6 +4096,13 @@ def _chat_completions_impl(req: ChatRequest, raw_request: Request):
                                               reason="unclosed tool call aborted before completion", error="")
                         except Exception:
                             pass
+                        # BUG-007/018: jawny alert zamiast cichego połykania uciętego wywołania narzędzia,
+                        # żeby model NIE twierdził, że zapis/operacja się powiodła.
+                        if re.search(r'name\s*=\s*["\']?(?:Write|Edit|SearchReplace)\b', full, re.IGNORECASE):
+                            _alert = "\n\n[BŁĄD PROXY: Zapis pliku został ucięty przez limit tokenów. Plik NIE został zapisany na dysku. Ponów zapis.]"
+                        else:
+                            _alert = "\n\n[BŁĄD PROXY: Wywołanie narzędzia zostało ucięte i NIE zostało wykonane. Ponów operację.]"
+                        yield _chunk({"content": _alert})
                     else:
                         remaining = _STRIP_TAGS.sub("", remaining)
                         remaining = re.sub(r"<[^>]*>", "", remaining).strip()
