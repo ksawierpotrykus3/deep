@@ -1286,8 +1286,70 @@ def _clean_system_reminders(text: str) -> str:
     return text.strip()
 
 
+def _annotate_read_tool_result(content: str, file_path: str, offset: int | None = None, limit: int | None = None) -> str:
+    """Wzbogaca wynik narzędzia Read/read_file o metadane rozmiaru, zakresu i wskazówkę akcji."""
+    if not isinstance(content, str) or not content.strip() or "[FILE METADATA:" in content:
+        return content
+    if not file_path or not isinstance(file_path, str):
+        return content
+
+    fp = os.path.abspath(file_path)
+    total_lines = None
+    if os.path.isfile(fp):
+        try:
+            with open(fp, "r", encoding="utf-8", errors="ignore") as f:
+                total_lines = sum(1 for _ in f)
+        except Exception:
+            total_lines = None
+
+    line_nums = [int(m.group(1)) for m in re.finditer(r"^(\d+)[\u2192:>\s]", content, re.MULTILINE)]
+    if line_nums:
+        start_line = min(line_nums)
+        end_line = max(line_nums)
+    else:
+        start_line = offset if (isinstance(offset, int) and offset > 0) else 1
+        cnt = len(content.splitlines())
+        end_line = start_line + max(0, cnt - 1)
+
+    fname = os.path.basename(file_path)
+    if total_lines is not None and total_lines > 0:
+        is_full = (start_line <= 1 and end_line >= total_lines) or (len(content.splitlines()) >= total_lines)
+        if is_full:
+            banner = (
+                f"[FILE METADATA: {fname} | STATUS: FULL FILE (100% loaded, lines 1-{total_lines} of {total_lines})]\n"
+                f"[GUIDANCE: You have the complete file content in context. Do NOT re-read this file.]"
+            )
+        else:
+            pct = min(100.0, max(0.1, (end_line - start_line + 1) / total_lines * 100))
+            banner = (
+                f"[FILE METADATA: {fname} | STATUS: PARTIAL SNIPPET (lines {start_line}-{end_line} of {total_lines} total, {pct:.1f}% coverage)]\n"
+                f"[ACTION GUIDANCE: To modify these lines, use SearchReplace on this specific snippet. "
+                f"The Write tool is reserved for NEW files or 100% full rewrites from scratch.]"
+            )
+    else:
+        banner = (
+            f"[FILE METADATA: {fname} | STATUS: LINES DELIVERED ({start_line}-{end_line})]\n"
+            f"[ACTION GUIDANCE: For editing this snippet use SearchReplace. Write is reserved for new files or full rewrites.]"
+        )
+    return f"{banner}\n\n{content}"
+
+
 def _format_msgs(msgs: list[dict], keep_images: bool = False, strip_reminders: bool = False) -> list[str]:
     parts = []
+    tool_call_map = {}
+    for m in msgs:
+        if m.get("role") == "assistant":
+            for call in (m.get("tool_calls") or []):
+                if isinstance(call, dict):
+                    cid = call.get("id")
+                    if cid:
+                        fn = call.get("function") or {}
+                        raw_args = fn.get("arguments", "{}")
+                        try:
+                            args = json.loads(raw_args) if isinstance(raw_args, str) else (raw_args or {})
+                        except Exception:
+                            args = {}
+                        tool_call_map[cid] = (fn.get("name", ""), args if isinstance(args, dict) else {})
     for msg in msgs:
         role = msg.get("role", "user")
         content = msg.get("content", "")
@@ -1328,6 +1390,11 @@ def _format_msgs(msgs: list[dict], keep_images: bool = False, strip_reminders: b
                 parts.append(f"[Assistant]: {content.strip()}")
             elif role == "tool":
                 tid = msg.get('tool_call_id', msg.get('name', 'tool'))
+                tname, targs = tool_call_map.get(tid, ("", {}))
+                if tname in ("Read", "read", "read_file"):
+                    fp = targs.get("file_path") or targs.get("path") or targs.get("filePath")
+                    if fp:
+                        content = _annotate_read_tool_result(content, str(fp), offset=targs.get("offset"), limit=targs.get("limit"))
                 parts.append(f"<tool_result id=\"{tid}\">\n{content.strip()}\n</tool_result>")
         if tc:
             for call in tc:
@@ -2737,17 +2804,38 @@ def _handle_official_api_chat(
     stateless (no session management). Cost: ~$0.015 per conversation.
     """
     # Prepare messages for official API
+    tool_call_map = {}
+    for m in req.messages:
+        if m.get("role") == "assistant":
+            for call in (m.get("tool_calls") or []):
+                if isinstance(call, dict):
+                    cid = call.get("id")
+                    if cid:
+                        fn = call.get("function") or {}
+                        raw_args = fn.get("arguments", "{}")
+                        try:
+                            args = json.loads(raw_args) if isinstance(raw_args, str) else (raw_args or {})
+                        except Exception:
+                            args = {}
+                        tool_call_map[cid] = (fn.get("name", ""), args if isinstance(args, dict) else {})
+
     api_messages = []
     for m in req.messages:
         role = m.get("role")
         content = m.get("content", "")
         
         if role == "tool":
+            tid = m.get("tool_call_id", "")
+            tname, targs = tool_call_map.get(tid, ("", {}))
+            if tname in ("Read", "read", "read_file"):
+                fp = targs.get("file_path") or targs.get("path") or targs.get("filePath")
+                if fp and isinstance(content, str):
+                    content = _annotate_read_tool_result(content, str(fp), offset=targs.get("offset"), limit=targs.get("limit"))
             # Compress large tool results
             if isinstance(content, str) and len(content) > 500000:
                 content = f"[Tool result: {len(content)} chars — compressed for context limits]"
             api_messages.append({"role": "tool", "content": content,
-                                "tool_call_id": m.get("tool_call_id", "")})
+                                "tool_call_id": tid})
         elif role == "system":
             # Main agent: prepend subagent emphasis + goals
             if not is_subagent:
