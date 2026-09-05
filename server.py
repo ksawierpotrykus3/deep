@@ -726,6 +726,11 @@ class DeepSeek:
         resp_msg_id = int(resp_msg_id) if resp_msg_id else None
         if preamble_data_count == 0:
             print(f"[WARN] No data lines from DeepSeek for session={chat_session_id} parent={parent_message_id}", flush=True)
+            if _retry < 1:
+                print(f"[RETRY] 0 data lines received, retrying (attempt {_retry+1})...", flush=True)
+                time.sleep(2)
+                return self.stream_completion(account_idx, chat_session_id, prompt, parent_message_id, max_tokens=max_tokens, temperature=temperature, top_p=top_p, model_type=model_type, ref_file_ids=ref_file_ids, thinking_enabled=thinking_enabled, search_enabled=search_enabled, _retry=_retry+1, watermark_uuid=watermark_uuid)
+            raise RuntimeError(f"DeepSeek empty stream (0 data lines) on account={account_idx}")
         elif resp_msg_id is None:
             print(f"[WARN] No response_message_id in {preamble_data_count} data lines for session={chat_session_id}", flush=True)
 
@@ -1641,13 +1646,26 @@ def _build_prompt(messages: list[dict], tools: list[dict] | None = None, images:
 
         # Compress OLD history (before current turn)
         compressed_history = _compress_tool_results(rest[:keep_from])
-        # Keep CURRENT turn intact — DO NOT compress unless individually massive (>25000 chars)
+        # Keep CURRENT turn intact — DO NOT compress unless individually massive (>25000 chars),
+        # but deduplicate identical tool outputs (e.g. 5x read of same 70k file) to avoid 350k+ prompt explosions
         current_turn = rest[keep_from:]
         safe_current = []
+        seen_current_tool_hashes = set()
         for msg in current_turn:
-            # Pojedynczy odczyt powyżej 25k znaków skracamy, aby nie przebić limitu 35k
-            if msg.get("role") == "tool" and isinstance(msg.get("content", ""), str) and len(msg["content"]) > 25000:
-                safe_current.append(_compress_tool_results([msg])[0])
+            c = msg.get("content", "")
+            if msg.get("role") == "tool" and isinstance(c, str):
+                c_hash = hash(c[:2000] + str(len(c)))
+                if c_hash in seen_current_tool_hashes:
+                    # Duplikat tego samego wyniku narzędzia w bieżącej turze!
+                    compressed_dup = dict(msg, content=f"[Zduplikowany wynik narzędzia — treść tożsama z poprzednim wywołaniem ({len(c)} znaków)]")
+                    safe_current.append(compressed_dup)
+                    continue
+                seen_current_tool_hashes.add(c_hash)
+                # Pojedynczy odczyt powyżej 25k znaków skracamy, aby nie przebić limitu 35k
+                if len(c) > 25000:
+                    safe_current.append(_compress_tool_results([msg])[0])
+                else:
+                    safe_current.append(msg)
             else:
                 safe_current.append(msg)
         rest = compressed_history + safe_current
@@ -4182,11 +4200,19 @@ def _chat_completions_impl(req: ChatRequest, raw_request: Request):
                 # ale zakończył wypowiedź obietnicą podjęcia akcji w czacie,
                 # rzuć jawny komunikat o braku wywołania narzędzia zamiast cichego sukcesu.
                 if tools_yielded == 0:
-                    if re.search(r'(?:odpalam|uruchamiam|zaczn[eę] od (?:czytania|przeczytania|szukania)|szukam szerzej|zaraz (?:przeczytam|sprawdz[eę]|odpal[eę])|bior[eę] si[eę] za|let me (?:launch|read|check|run))[^\.\n]*[\.\!\?]?\s*$', full.strip(), re.IGNORECASE):
+                    if not full.strip():
+                        print(f"[STREAM ZERO TOKENS] No content and no tools generated for {conv_key[:24]}", flush=True)
+                        success = False
+                        _alert = "\n\n[BŁĄD PROXY: Serwer DeepSeek nie zwrócił żadnych tokenów (pusty strumień). Ponów zapytanie w nowym czacie.]"
+                        yield _chunk({"content": _alert})
+                    elif re.search(r'(?:odpalam|uruchamiam|zaczn[eę] od (?:czytania|przeczytania|szukania)|szukam szerzej|zaraz (?:przeczytam|sprawdz[eę]|odpal[eę])|bior[eę] si[eę] za|let me (?:launch|read|check|run))[^\.\n]*[\.\!\?]?\s*$', full.strip(), re.IGNORECASE):
                         _alert = "\n\n[BŁĄD PROXY: Model zadeklarował wykonanie akcji, ale nie wyemitował bloku narzędzia <tool_call>. Ponów polecenie.]"
                         yield _chunk({"content": _alert})
-
-                success = True
+                        success = True
+                    else:
+                        success = True
+                else:
+                    success = True
             except GeneratorExit:
                 print(f"[DISCONNECT] Client disconnected", flush=True)
                 return
