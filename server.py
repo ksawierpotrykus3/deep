@@ -4201,15 +4201,15 @@ def _chat_completions_impl(req: ChatRequest, raw_request: Request):
                     print(f"[CONTEXT LIMIT] Rotating DS session for {conv_key[:24]}... (prompt was {len(prompt)} chars)", flush=True)
                     if state:
                         try:
-                            new_session_id, account_idx = ds.create_session_with_fallback(account_idx)
+                            new_session_id, rot_account = ds.create_session_with_fallback(account_idx)
                             state["ds_session"] = new_session_id
-                            state["account"] = account_idx
+                            state["account"] = rot_account
                             state["parent_id"] = None
                             state["msgs_len"] = len(req.messages)
                             with _conv_lock:
                                 _conv_state[conv_key] = state
                                 _save_conv_state()
-                            print(f"[CONTEXT LIMIT] New DS session: {new_session_id} (account={account_idx})", flush=True)
+                            print(f"[CONTEXT LIMIT] New DS session: {new_session_id} (account={rot_account})", flush=True)
                         except Exception as rot_err:
                             print(f"[CONTEXT LIMIT] Rotation failed: {rot_err}, clearing state", flush=True)
                             _conv_state.pop(conv_key, None)

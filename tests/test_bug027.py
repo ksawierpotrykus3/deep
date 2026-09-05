@@ -89,3 +89,31 @@ def test_create_session_with_fallback_all_fail():
     with patch.object(ds, 'create_session', side_effect=RuntimeError('Service unavailable')):
         with pytest.raises(RuntimeError, match='All accounts failed'):
             ds.create_session_with_fallback(0)
+
+@pytest.mark.asyncio
+async def test_generate_stream_does_not_raise_unbound_local_error():
+    '''Verify that generate() can start and access account_idx without UnboundLocalError.'''
+    from starlette.requests import Request
+    from server import ChatRequest, _chat_completions_impl
+
+    scope = {
+        'type': 'http',
+        'method': 'POST',
+        'headers': [(b'content-type', b'application/json')],
+    }
+    raw_req = Request(scope)
+    raw_req._body = b'{}'
+    req = ChatRequest(
+        model='deepseek-chat',
+        messages=[{'role': 'user', 'content': 'ping'}],
+        stream=True
+    )
+
+    with patch('server.ds.create_session_with_fallback', return_value=('test-sess', 0)):
+        with patch('server.ds.stream_completion', return_value=(iter([]), {'resp_msg_id': 1})):
+            with patch('server._ensure_slot'):
+                resp = _chat_completions_impl(req, raw_req)
+                gen = resp.body_iterator
+                first_chunk = await anext(gen)
+                assert 'role' in first_chunk
+
