@@ -1714,6 +1714,15 @@ Rules:
     # Doklejenie schematów narzędzi (ZAWSZE PEŁNYCH, NIGDY NIE UCINANYCH)
     prompt += tools_suffix
 
+    # BUG-024: w trybie resume (tools is None) doklej przypomnienie formatu narzędzi,
+    # aby zapobiec amnezji agenta i składaniu pustych obietnic w czacie bez emitowania XML.
+    if tools is None:
+        prompt += """
+
+[CRITICAL DIRECTIVE: Posiadasz aktywne narzędzia programistyczne (Task, Read, Grep, Glob, LS, Write, Edit, SearchReplace, RunCommand itd.).
+ZASADA BEZWZGLĘDNA: Jeśli w tekście deklarujesz podjęcie akcji (np. „Odpalam...”, „Zacznę od...”, „Szukam...”, „Zaraz przeczytam...”), MASZ OBOWIĄZEK w tej samej wiadomości wyemitować blok <tool_call name="...">.
+ZAKAZ kończenia wypowiedzi na samej obietnicy tekstowej!]"""
+
     # Zwracamy pełny prompt — jeśli prompt > 50k znaków, _chunk_oversized_prompt wyśle go bezpiecznie w chunkach
     return prompt
 
@@ -1953,12 +1962,14 @@ def _parse_tool_calls(text: str, known_tools: set | list | None = None) -> list[
         known_tools = set(known_tools)
 
     # 1. Standard XML or DSML-wrapped invoke:
-    # Matches <invoke name="...">, <tool_call name="...">, <_call name="...">, <call name="...">, <tool name="...">, and DSML variants
+    # Matches <invoke name="...">, <tool_call name="...">, <_call name="...">, <call name="...">, <tool name="...">, and DSML variants (e.g. <｜｜DSML｜｜ name="...">... </invoke>)
+    open_tag_pat = r'''(?:[|\uff5c\u2502\s]*DSML[|\uff5c\u2502\s]*|(?:[|\uff5c\u2502]\s*[|\uff5c\u2502]\s*DSML\s*[|\uff5c\u2502]\s*[|\uff5c\u2502]\s*)?(?:tool_call|invoke|tool_capability|_call|call|tool|调用|調用|工具|函数))'''
+    close_tag_pat = r'''(?:[|\uff5c\u2502\s]*DSML[|\uff5c\u2502\s]*|(?:[|\uff5c\u2502]\s*[|\uff5c\u2502]\s*DSML\s*[|\uff5c\u2502]\s*[|\uff5c\u2502]\s*)?(?:tool_call|invoke|tool_capability|_call|call|tool|调用|調用|工具|函数))'''
     tool_pat = re.compile(
         r'''(?:<\s*(?:[|\uff5c\u2502]\s*[|\uff5c\u2502]\s*DSML\s*[|\uff5c\u2502]\s*[|\uff5c\u2502]\s*)?tool\s+)?'''
-        r'''<\s*(?:[|\uff5c\u2502]\s*[|\uff5c\u2502]\s*DSML\s*[|\uff5c\u2502]\s*[|\uff5c\u2502]\s*)?(?:tool_call|invoke|tool_capability|_call|call|tool|调用|調用|工具|函数)\s*name=(["'])([^"']*?)\1[^>]*>'''
+        rf'''<\s*{open_tag_pat}\s*name=(["'])([^"']*?)\1[^>]*>'''
         r'''(.*?)'''
-        r'''</\s*(?:[|\uff5c\u2502]\s*[|\uff5c\u2502]\s*DSML\s*[|\uff5c\u2502]\s*[|\uff5c\u2502]\s*)?(?:tool_call|invoke|tool_capability|_call|call|tool|调用|調用|工具|函数)s?>''',
+        rf'''</\s*{close_tag_pat}s?>''',
         re.DOTALL | re.IGNORECASE
     )
     for m in tool_pat.finditer(text):
@@ -4079,6 +4090,16 @@ def _chat_completions_impl(req: ChatRequest, raw_request: Request):
                         if clean_rem:
                             yield _chunk({"content": clean_rem})
                     sent_until = len(full)
+
+                # BUG-024: Bezpiecznik pustych deklaracji (Empty Promise Guard).
+                # Jeśli model nie wyemitował żadnego narzędzia (tools_yielded == 0),
+                # ale zakończył wypowiedź obietnicą podjęcia akcji w czacie,
+                # rzuć jawny komunikat o braku wywołania narzędzia zamiast cichego sukcesu.
+                if tools_yielded == 0:
+                    if re.search(r'(?:odpalam|uruchamiam|zaczn[eę] od (?:czytania|przeczytania|szukania)|szukam szerzej|zaraz (?:przeczytam|sprawdz[eę]|odpal[eę])|bior[eę] si[eę] za|let me (?:launch|read|check|run))[^\.\n]*[\.\!\?]?\s*$', full.strip(), re.IGNORECASE):
+                        _alert = "\n\n[BŁĄD PROXY: Model zadeklarował wykonanie akcji, ale nie wyemitował bloku narzędzia <tool_call>. Ponów polecenie.]"
+                        yield _chunk({"content": _alert})
+
                 success = True
             except GeneratorExit:
                 print(f"[DISCONNECT] Client disconnected", flush=True)

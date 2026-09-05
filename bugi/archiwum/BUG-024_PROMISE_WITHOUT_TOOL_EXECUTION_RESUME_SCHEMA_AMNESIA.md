@@ -2,9 +2,9 @@
 
 **Data zgłoszenia:** 2026-09-05  
 **Środowisko:** Trae IDE + DeepSeek Proxy (`server.py`)  
-**Status:** Zdiagnozowany / Wymaga Poprawki w Proxy  
-**Dotknięte komponenty:** `server.py` (`_build_prompt`, tryb `resume`), obsługa narzędzia `Task` i `Read`  
-**Dowody wizualne:** [`media_1788595689394.png`](file:///C:/Users/Ksawier/.gemini/antigravity/brain/87701fc8-c77e-455c-831f-ebcd5eee55d0/.user_uploaded/media_1788595689394.png), [`media_1788595749053.png`](file:///C:/Users/Ksawier/.gemini/antigravity/brain/87701fc8-c77e-455c-831f-ebcd5eee55d0/.user_uploaded/media_1788595749053.png)  
+**Status:** ✅ **Naprawione w proxy / Zweryfikowane testami** (`test_bug024.py`)  
+**Dotknięte komponenty:** `server.py` (`tool_pat` asymetria DSML/invoke, `_build_prompt` resume directive, `generate` empty promise guard)  
+**Dowody wizualne:** [`media_1788595689394.png`](file:///C:/Users/Ksawier/.gemini/antigravity/brain/87701fc8-c77e-455c-831f-ebcd5eee55d0/.user_uploaded/media_1788595689394.png), [`media_1788595749053.png`](file:///C:/Users/Ksawier/.gemini/antigravity/brain/87701fc8-c77e-455c-831f-ebcd5eee55d0/.user_uploaded/media_1788595749053.png), [`media_1788596162070.png`](file:///C:/Users/Ksawier/.gemini/antigravity/brain/87701fc8-c77e-455c-831f-ebcd5eee55d0/.user_uploaded/media_1788596162070.png)  
 
 ---
 
