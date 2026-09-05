@@ -15,6 +15,8 @@ Poniższe błędy są w trakcie analizy lub wymagają dodatkowych bezpieczników
 
 | ID | Data | Tytuł | Status | Plik |
 |---|---|---|---|---|
+| **BUG-025** | 2026-09-05 | Fałszywy Alarm Strażnika Pętli (`_detect_loop`) na Liniach Dekoracyjnych Komentarzy (`// =======`) | 🚨 **Zdiagnozowany / Gotowy plan naprawy** | [`BUG-025_LOOP_GUARD_FALSE_POSITIVE_ON_DECORATIVE_COMMENTS.md`](file:///c:/Users/Ksawier/Pictures/Screenshots/Projekty_autorskie/deepseek-proxy-clean/bugi/BUG-025_LOOP_GUARD_FALSE_POSITIVE_ON_DECORATIVE_COMMENTS.md) |
+| **BUG-026** | 2026-09-05 | Odrzucenie Hybrydowego Tagu Zamykającego `</｜｜DSML｜｜ask>`, Niepotrzebne Auto-Continue i Rate-Limit | 🚨 **Zdiagnozowany / Gotowy plan naprawy** | [`BUG-026_UNRECOGNIZED_CLOSING_TAG_HYBRID_AUTO_CONTINUE_RATE_LIMIT.md`](file:///c:/Users/Ksawier/Pictures/Screenshots/Projekty_autorskie/deepseek-proxy-clean/bugi/BUG-026_UNRECOGNIZED_CLOSING_TAG_HYBRID_AUTO_CONTINUE_RATE_LIMIT.md) |
 | **BUG-009** | 2026-08-31 | Inwersja Narzędzi (Action-Intention Mismatch: Deklaracja Write -> Wywołanie Read) i Pętla Mikro-Odczytów | ⚠️ Częściowo mitygowany przez Anti-Loop Guard | [`BUG-009_INTENTION_ACTION_MISMATCH_WRITE_TO_READ_LOOP.md`](file:///c:/Users/Ksawier/Pictures/Screenshots/Projekty_autorskie/deepseek-proxy-clean/bugi/BUG-009_INTENTION_ACTION_MISMATCH_WRITE_TO_READ_LOOP.md) |
 | **BUG-016** | 2026-08-31 | Zduplikowane Obietnice Implementacji IPC i Kolejna Pętla Odczytu `chain_executor.py` zamiast Edycji Kodu | ⚠️ Częściowo mitygowany przez Anti-Loop Guard | [`BUG-016_DUPLICATE_IPC_PROMISES_READ_STALL.md`](file:///c:/Users/Ksawier/Pictures/Screenshots/Projekty_autorskie/deepseek-proxy-clean/bugi/BUG-016_DUPLICATE_IPC_PROMISES_READ_STALL.md) |
 
