@@ -1,4 +1,4 @@
-﻿# BUG-027: Błąd Tworzenia Sesji DeepSeek (`orjson.JSONDecodeError: Input is a zero-length, empty document`) Powodujący HTTP 500 w Proxy i Błąd `5400001` w Trae IDE
+# BUG-027: Błąd Tworzenia Sesji DeepSeek (`orjson.JSONDecodeError: Input is a zero-length, empty document`) Powodujący HTTP 500 w Proxy i Błąd `5400001` w Trae IDE
 
 **Data zgłoszenia:** 2026-09-05  
 **Środowisko:** Trae IDE + DeepSeek Proxy (`server.py`)  
@@ -70,4 +70,17 @@ orjson.JSONDecodeError: Input is a zero-length, empty document: line 1 column 1 
   2. Rzucanie błędu po wyczerpaniu ponowień (`test_create_session_raises_on_persistent_empty_body` -> PASS)
   3. Automatyczny failover na drugie konto (`test_create_session_with_fallback_switches_account` -> PASS)
   4. Obsługę sytuacji wyczerpania wszystkich kont (`test_create_session_with_fallback_all_fail` -> PASS)
-- Pełny zestaw testów: `pytest -q` -> **76 passed**.
+  5. Asynchroniczne uruchomienie streamingu SSE bez błędu zakresu zmiennych (`test_generate_stream_does_not_raise_unbound_local_error` -> PASS)
+- Pełny zestaw testów: `pytest -q` -> **77 passed**.
+
+---
+
+## 6. Addendum: Poprawka Zakresu Zmiennych w `generate()` (`UnboundLocalError`)
+
+Podczas pierwszego żądania strumieniowego z Trae IDE wystąpił błąd:
+```text
+UnboundLocalError: cannot access local variable 'account_idx' where it is not associated with a value
+  at line 4003: _slot_busy[account_idx] = True
+```
+Przyczyna: Wewnątrz funkcji zagnieżdżonej `generate()` w bloku rotacji sesji przypisano wartość do `account_idx` (`new_session_id, account_idx = ...`), co w Pythonie powoduje uznanie zmiennej za lokalną w całym ciele funkcji. Zmienna została przemianowana na `rot_account`, a test asynchroniczny `test_generate_stream_does_not_raise_unbound_local_error` deterministycznie potwierdził brak błędu.
+Odpowiedź strumieniowa na żywo została zweryfikowana testem z 59 pakietami chunków SSE.
