@@ -536,13 +536,55 @@ class DeepSeek:
                 impersonate="chrome120",
                 timeout=30,
             )
-        r = self._retry_on_network(_do, max_retries=3)
-        resp_json = r.json()
-        print(f"[CREATE SESSION] account={account_idx} status={r.status_code} response={json.dumps(resp_json, ensure_ascii=False)[:500]}", flush=True)
-        data = resp_json.get("data")
-        if data is None:
-            raise RuntimeError(f"Create session failed: {json.dumps(resp_json, ensure_ascii=False)[:300]}")
-        return data["biz_data"]["chat_session"]["id"]
+        last_exc = None
+        for attempt in range(3):
+            try:
+                r = self._retry_on_network(_do, max_retries=2)
+                if r.status_code != 200:
+                    raise RuntimeError(f"HTTP {r.status_code}: {r.text[:300]}")
+                if not r.content or not r.content.strip():
+                    raise RuntimeError(f"Empty response body (HTTP {r.status_code})")
+                try:
+                    resp_json = r.json()
+                except Exception as e:
+                    raise RuntimeError(f"Invalid JSON (HTTP {r.status_code}): {r.text[:300]}") from e
+                print(f"[CREATE SESSION] account={account_idx} status={r.status_code} response={json.dumps(resp_json, ensure_ascii=False)[:500]}", flush=True)
+                data = resp_json.get("data")
+                if data is None:
+                    raise RuntimeError(f"Create session failed: {json.dumps(resp_json, ensure_ascii=False)[:300]}")
+                return data["biz_data"]["chat_session"]["id"]
+            except Exception as e:
+                last_exc = e
+                if attempt < 2:
+                    wait_s = (attempt + 1) * 1.0
+                    print(f"[CREATE SESSION] account={account_idx} attempt {attempt+1}/3 failed: {e}. Retrying in {wait_s}s...", flush=True)
+                    time.sleep(wait_s)
+        raise RuntimeError(f"Create session failed for account {account_idx}: {last_exc}") from last_exc
+
+    def create_session_with_fallback(self, preferred_idx: int) -> tuple[str, int]:
+        """
+        Tworzy sesję na koncie preferred_idx. Jeśli konto zwróci błąd (pusty dokument,
+        błąd sieci, wygaśnięcie sesji), próbuje pozostałych kont w puli.
+        Zwraca (session_id, account_idx_used).
+        """
+        candidates = [preferred_idx]
+        for i in range(MAX_ACCOUNTS):
+            if i != preferred_idx and self.ap.is_valid(i):
+                candidates.append(i)
+
+        last_err = None
+        for idx in candidates:
+            try:
+                sid = self.create_session(idx)
+                if idx != preferred_idx:
+                    print(f"[CREATE SESSION FALLBACK] Preferred account {preferred_idx} failed, successfully created session on account {idx}: {sid}", flush=True)
+                return sid, idx
+            except Exception as e:
+                last_err = e
+                print(f"[CREATE SESSION FALLBACK] Account {idx} failed: {e}", flush=True)
+
+        raise RuntimeError(f"All accounts failed to create session (last error: {last_err})") from last_err
+
 
     def stream_completion(self, account_idx: int, chat_session_id: str, prompt: str,
                           parent_message_id: int | None = None,
@@ -2747,9 +2789,10 @@ def _handle_silent_rotation(conv_key: str, messages: list, conv_state: dict, ds_
 
     print(f"[ROTATION] conv={conv_key[:20]}... msgs={msgs_len} >= 200, rotating session...", flush=True)
     try:
-        new_session_id = ds_client.create_session(account_idx)
-        print(f"[ROTATION] New DS session: {new_session_id}", flush=True)
+        new_session_id, account_idx = ds_client.create_session_with_fallback(account_idx)
+        print(f"[ROTATION] New DS session: {new_session_id} (account={account_idx})", flush=True)
         state["ds_session"] = new_session_id
+        state["account"] = account_idx
         state["parent_id"] = None
         state["msgs_len"] = len(messages)
         # Invalidate PoW cache for this account
@@ -3525,7 +3568,7 @@ def _chat_completions_impl(req: ChatRequest, raw_request: Request):
             _save_tools(sys_hash, req.tools)
         # Build prompt with uploaded images for vision model
         ref_file_ids = []
-        chat_id = ds.create_session(account_idx)
+        chat_id, account_idx = ds.create_session_with_fallback(account_idx)
         parent_id = None
         clean_msgs = []
         for m in req.messages:
@@ -3720,7 +3763,7 @@ def _chat_completions_impl(req: ChatRequest, raw_request: Request):
                 chunks = _chunk_oversized_prompt(prompt, CHUNK_THRESHOLD)
                 if len(chunks) > 1:
                     if not chat_id:
-                        chat_id = ds.create_session(account_idx)
+                        chat_id, account_idx = ds.create_session_with_fallback(account_idx)
                     print(f"[CHUNKED INGESTION] Prompt ({len(prompt)} chars) > {CHUNK_THRESHOLD} -> split into {len(chunks)} chunks for session {chat_id}", flush=True)
                     current_parent = parent_id
                     for c_idx, c_text in enumerate(chunks[:-1]):
@@ -3750,7 +3793,7 @@ def _chat_completions_impl(req: ChatRequest, raw_request: Request):
                 smaller_chunks = _chunk_oversized_prompt(prompt, 30000)
                 if len(smaller_chunks) > 1:
                     print(f"[REACTIVE CHUNKING] Splitting prompt into {len(smaller_chunks)} smaller 30k chunks in fresh session...", flush=True)
-                    chat_id = ds.create_session(account_idx)
+                    chat_id, account_idx = ds.create_session_with_fallback(account_idx)
                     cur_p = None
                     for sc_idx, sc_text in enumerate(smaller_chunks[:-1]):
                         new_p = ds.ingest_chunk_fast(account_idx, chat_id, sc_text, parent_message_id=cur_p, thinking_enabled=False)
@@ -3786,7 +3829,7 @@ def _chat_completions_impl(req: ChatRequest, raw_request: Request):
                 with _conv_lock:
                     _conv_state.pop(conv_key, None)
                     _save_conv_state()
-                chat_id = ds.create_session(account_idx)
+                chat_id, account_idx = ds.create_session_with_fallback(account_idx)
                 parent_id = None
                 # Crush ALL tool results — web chat can't handle raw results on rebuild
                 crushed_msgs = _crush_tool_results(req.messages)
@@ -3818,7 +3861,7 @@ def _chat_completions_impl(req: ChatRequest, raw_request: Request):
             print(f"[MIGRATE] Moving conv {conv_key[:24]}... from account {account_idx} to {new_idx}", flush=True)
             account_idx = new_idx
             _ensure_slot(account_idx)
-            chat_id = ds.create_session(account_idx)
+            chat_id, account_idx = ds.create_session_with_fallback(account_idx)
             parent_id = None
             clean_msgs = []
             for m in req.messages:
@@ -4158,14 +4201,15 @@ def _chat_completions_impl(req: ChatRequest, raw_request: Request):
                     print(f"[CONTEXT LIMIT] Rotating DS session for {conv_key[:24]}... (prompt was {len(prompt)} chars)", flush=True)
                     if state:
                         try:
-                            new_session_id = ds.create_session(account_idx)
+                            new_session_id, account_idx = ds.create_session_with_fallback(account_idx)
                             state["ds_session"] = new_session_id
+                            state["account"] = account_idx
                             state["parent_id"] = None
                             state["msgs_len"] = len(req.messages)
                             with _conv_lock:
                                 _conv_state[conv_key] = state
                                 _save_conv_state()
-                            print(f"[CONTEXT LIMIT] New DS session: {new_session_id}", flush=True)
+                            print(f"[CONTEXT LIMIT] New DS session: {new_session_id} (account={account_idx})", flush=True)
                         except Exception as rot_err:
                             print(f"[CONTEXT LIMIT] Rotation failed: {rot_err}, clearing state", flush=True)
                             _conv_state.pop(conv_key, None)
@@ -4362,6 +4406,16 @@ if __name__ == "__main__":
         print("No accounts found. Open a SECOND CMD in this folder and run:  login_slot.bat 0")
     threading.Thread(target=_sweeper_loop, daemon=True).start()
     _port = int(os.environ.get("PORT", 4570))
+    if "--port" in sys.argv:
+        try:
+            _port = int(sys.argv[sys.argv.index("--port") + 1])
+        except (ValueError, IndexError):
+            pass
     _host = os.environ.get("HOST", "127.0.0.1")
+    if "--host" in sys.argv:
+        try:
+            _host = sys.argv[sys.argv.index("--host") + 1]
+        except IndexError:
+            pass
     print(f"Starting on http://{_host}:{_port}")
     uvicorn.run(app, host=_host, port=_port)
