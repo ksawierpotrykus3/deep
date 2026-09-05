@@ -937,22 +937,34 @@ class DeepSeek:
                     print(f"[THINK] captured {len(thinking_buffer)} chars of reasoning (suppressed, not leaked)", flush=True)
 
             # ── Moduł 2: Transparentny Auto-Continue ──
-            # Stream uciety (watchdog 60s / koniec bez FINISHED / urwany tag narzedzia)
-            # -> proxy NIE zamyka odpowiedzi do Trae, tylko wysyla "kontynuuj" w tej samej
-            # sesji DeepSeeka (parent = ostatnie resp_msg_id) i dokleja nowe tokeny do
-            # biezacego strumienia SSE.
+            # BUG-029: Jeśli w buforze znajduje się kompletne wywołanie narzędzia
+            # i nie ma żadnego niedomkniętego tagu, tura asystenta jest ZAKOŃCZONA.
+            # Model oczekuje na wynik narzędzia od klienta (Trae) — auto-continue NIE MOŻE się wykonać!
+            has_complete_tools = bool(_parse_tool_calls(content_buffer))
+            has_unclosed_tools = _has_unclosed_tool_call(content_buffer)
+            if has_complete_tools and not has_unclosed_tools:
+                finished_normally = True
+
+            # Jeśli strumień SSE zakończył się bez błędu i nie ma urwanych tagów,
+            # traktujemy to jako normalny koniec generowania.
+            if not has_unclosed_tools and (has_complete_tools or content_buffer.strip()):
+                finished_normally = True
+
+            # Auto-continue ma rację bytu WYŁĄCZNIE wtedy, gdy w buforze znajduje się
+            # RZECZYWIŚCIE urwany / niedomknięty znacznik narzędzia (has_unclosed_tools).
+            # NIGDY nie wysyłamy "kontynuuj", gdy model zgłosił już kompletne narzędzie lub skończył wypowiedź.
             auto_continue_count = 0
-            while ((not finished_normally or _has_unclosed_tool_call(content_buffer)) and not loop_aborted and _auto_continue_budget > 0 and (content_buffer.strip() or thinking_buffer.strip() or resp_msg_id)):
+            while (has_unclosed_tools and not loop_aborted and _auto_continue_budget > 0 and (content_buffer.strip() or thinking_buffer.strip() or resp_msg_id)):
                 _auto_continue_budget -= 1
                 auto_continue_count += 1
-                print(f"[AUTO-CONTINUE] attempt {auto_continue_count}, budget left={_auto_continue_budget}, parent={resp_msg_id} (content={len(content_buffer)} chars, thinking={len(thinking_buffer)} chars)", flush=True)
+                print(f"[AUTO-CONTINUE] Truncated tool call detected, attempt {auto_continue_count}, budget left={_auto_continue_budget}, parent={resp_msg_id} (content={len(content_buffer)} chars)", flush=True)
                 try:
                     cont_res = self.stream_completion(
                         account_idx, chat_session_id, "kontynuuj", resp_msg_id,
                         max_tokens=max_tokens, temperature=temperature, top_p=top_p,
                         model_type=model_type, ref_file_ids=ref_file_ids,
                         thinking_enabled=thinking_enabled, search_enabled=search_enabled,
-                        _auto_continue_budget=_auto_continue_budget, watermark_uuid=watermark_uuid)
+                        _auto_continue_budget=0, watermark_uuid=watermark_uuid)
                 except Exception as ce:
                     print(f"[AUTO-CONTINUE] Request failed: {ce}", flush=True)
                     break
@@ -975,14 +987,13 @@ class DeepSeek:
                 except Exception as ce:
                     print(f"[AUTO-CONTINUE] Continue stream error: {ce}", flush=True)
                     break
-                # finished_normally jest ustawiane DOPIERO po pelnym skonsumowaniu
-                # cont_gen (wewnatrz _stream), wiec czytaj je PO petli, nie przed.
-                cont_finished = cont_meta.get("finished_normally", False)
-                if cont_finished or cont_yielded:
+                has_unclosed_tools = _has_unclosed_tool_call(content_buffer)
+                if not has_unclosed_tools:
                     finished_normally = True
-                    print(f"[AUTO-CONTINUE] attempt {auto_continue_count} OK (yielded={cont_yielded}, finished={cont_finished})", flush=True)
+                    print(f"[AUTO-CONTINUE] attempt {auto_continue_count} successfully closed tool call (yielded={cont_yielded})", flush=True)
+                    break
                 else:
-                    print(f"[AUTO-CONTINUE] attempt {auto_continue_count} produced nothing - retrying", flush=True)
+                    print(f"[AUTO-CONTINUE] attempt {auto_continue_count} still unclosed (yielded={cont_yielded})", flush=True)
             if auto_continue_count and not finished_normally:
                 result_meta["auto_continue_failed"] = True
 
@@ -2379,7 +2390,7 @@ _STRIP_TAGS = re.compile(
     r"</?system-reminder[^>]*>|</?-reminder[^>]*>|"
     r"-reminder>[^\n]*|"
     r"<critical_directive>[\s\S]*?</critical_directive>|"
-    r"</?previous_tool_call[^>]*>|"
+    r"</?previous_(?:tool_)?calls?[^>]*>|"
     r"</?user_input[^>]*>|"
     r"</?(?:[|\uff5c\u2502\s]*DSML[|\uff5c\u2502\s]*|tool_calls?|tool_capability|invoke|_calls?|[|\uff5c\u2502\s]*cl_calls?|call|tools?|center|调用|調用|工具|函数|结果|思考|glob|grep|read|ls|write|deletefile|searchreplace|task|skill|runcommand|checkcommandstatus|stopcommand|askuserquestion|notifyuser|websearch|webfetch|getdiagnostics|todowrite|openpreview|run_mcp)[^>]*>|"
     r"</?\s*(?:[|\uff5c\u2502\s]*DSML[|\uff5c\u2502\s]*)(?:invoke|parameter|call|tool)?(?:\s*>|\b|\Z)|"
@@ -2399,7 +2410,7 @@ _STRIP_TAGS = re.compile(
 
 
 _LEAK_DETECTOR = re.compile(
-    r"</?(?:[|\uff5c\u2502\s]*DSML[|\uff5c\u2502\s]*|tool_call|invoke|_call|user_input|parameter|参数|參數|pattern|path|file_path|tool_capability)[^>]*>|"
+    r"</?(?:[|\uff5c\u2502\s]*DSML[|\uff5c\u2502\s]*|tool_call|invoke|_call|user_input|parameter|参数|參數|pattern|path|file_path|tool_capability|previous_(?:tool_)?calls?)[^>]*>|"
     r"\[(?:call:|Task:|Read:|Write:|Grep:|Glob:|RunCommand:)|"
     r"<[|\uff5c\u2502\s]*tool\s*call|"
     r"\{\s*\"(?:file_path|command|pattern|subagent_type)\"\s*:",
