@@ -15,8 +15,6 @@ Poniższe błędy są w trakcie analizy lub wymagają dodatkowych bezpieczników
 
 | ID | Data | Tytuł | Status | Plik |
 |---|---|---|---|---|
-| **BUG-025** | 2026-09-05 | Fałszywy Alarm Strażnika Pętli (`_detect_loop`) na Liniach Dekoracyjnych Komentarzy (`// =======`) | 🚨 **Zdiagnozowany / Gotowy plan naprawy** | [`BUG-025_LOOP_GUARD_FALSE_POSITIVE_ON_DECORATIVE_COMMENTS.md`](file:///c:/Users/Ksawier/Pictures/Screenshots/Projekty_autorskie/deepseek-proxy-clean/bugi/BUG-025_LOOP_GUARD_FALSE_POSITIVE_ON_DECORATIVE_COMMENTS.md) |
-| **BUG-026** | 2026-09-05 | Odrzucenie Hybrydowego Tagu Zamykającego `</｜｜DSML｜｜ask>`, Niepotrzebne Auto-Continue i Rate-Limit | 🚨 **Zdiagnozowany / Gotowy plan naprawy** | [`BUG-026_UNRECOGNIZED_CLOSING_TAG_HYBRID_AUTO_CONTINUE_RATE_LIMIT.md`](file:///c:/Users/Ksawier/Pictures/Screenshots/Projekty_autorskie/deepseek-proxy-clean/bugi/BUG-026_UNRECOGNIZED_CLOSING_TAG_HYBRID_AUTO_CONTINUE_RATE_LIMIT.md) |
 | **BUG-009** | 2026-08-31 | Inwersja Narzędzi (Action-Intention Mismatch: Deklaracja Write -> Wywołanie Read) i Pętla Mikro-Odczytów | ⚠️ Częściowo mitygowany przez Anti-Loop Guard | [`BUG-009_INTENTION_ACTION_MISMATCH_WRITE_TO_READ_LOOP.md`](file:///c:/Users/Ksawier/Pictures/Screenshots/Projekty_autorskie/deepseek-proxy-clean/bugi/BUG-009_INTENTION_ACTION_MISMATCH_WRITE_TO_READ_LOOP.md) |
 | **BUG-016** | 2026-08-31 | Zduplikowane Obietnice Implementacji IPC i Kolejna Pętla Odczytu `chain_executor.py` zamiast Edycji Kodu | ⚠️ Częściowo mitygowany przez Anti-Loop Guard | [`BUG-016_DUPLICATE_IPC_PROMISES_READ_STALL.md`](file:///c:/Users/Ksawier/Pictures/Screenshots/Projekty_autorskie/deepseek-proxy-clean/bugi/BUG-016_DUPLICATE_IPC_PROMISES_READ_STALL.md) |
 
@@ -24,10 +22,12 @@ Poniższe błędy są w trakcie analizy lub wymagają dodatkowych bezpieczników
 
 ## 📦 Archiwum Błędów Rozwiązanych i Zweryfikowanych (`bugi/archiwum/`)
 
-Wszystkie poniższe błędy zostały deterministycznie naprawione w kodzie proxy (`server.py`, `monitor.py`), przetestowane suitą 67 testów jednostkowych (`pytest`) i zabezpieczone przed regresją:
+Wszystkie poniższe błędy zostały deterministycznie naprawione w kodzie proxy (`server.py`, `monitor.py`), przetestowane suitą 72 testów jednostkowych (`pytest`) i zabezpieczone przed regresją:
 
 | ID | Data | Tytuł | Wdrożona Poprawka (Commit) | Plik Archiwum |
 |---|---|---|---|---|
+| **BUG-026** | 2026-09-05 | Odrzucenie Hybrydowego Tagu Zamykającego `</｜｜DSML｜｜ask>`, Niepotrzebne Auto-Continue i Rate-Limit | ✅ Obsługa tagu `ask/action` w DSML + Natychmiastowa rotacja konta na czysty slot przy rate-limit | [`archiwum/BUG-026...md`](file:///c:/Users/Ksawier/Pictures/Screenshots/Projekty_autorskie/deepseek-proxy-clean/bugi/archiwum/BUG-026_UNRECOGNIZED_CLOSING_TAG_HYBRID_AUTO_CONTINUE_RATE_LIMIT.md) |
+| **BUG-025** | 2026-09-05 | Fałszywy Alarm Strażnika Pętli (`_detect_loop`) na Liniach Dekoracyjnych Komentarzy (`// =======`) | ✅ Ignorowanie separatorów/linii dekoracyjnych w `_detect_loop` z bezpiecznikiem patologicznym | [`archiwum/BUG-025...md`](file:///c:/Users/Ksawier/Pictures/Screenshots/Projekty_autorskie/deepseek-proxy-clean/bugi/archiwum/BUG-025_LOOP_GUARD_FALSE_POSITIVE_ON_DECORATIVE_COMMENTS.md) |
 | **BUG-024** | 2026-09-05 | Puste Obietnice Narzędzi i Asymetria DSML/Invoke (Przerwanie Czatu na 0%) | ✅ Elastyczny parser tagów DSML/invoke + Agent Resume Guard + Empty Promise Guard | [`archiwum/BUG-024...md`](file:///c:/Users/Ksawier/Pictures/Screenshots/Projekty_autorskie/deepseek-proxy-clean/bugi/archiwum/BUG-024_PROMISE_WITHOUT_TOOL_EXECUTION_RESUME_SCHEMA_AMNESIA.md) |
 | **BUG-023** | 2026-09-02 | Zjadanie Treści Wiadomości przez `completion_tokens: 0` | ✅ Zliczanie tokenów `content`, `reasoning` i `tool_calls` (`f56ac58`) | [`archiwum/BUG-023...md`](file:///c:/Users/Ksawier/Pictures/Screenshots/Projekty_autorskie/deepseek-proxy-clean/bugi/archiwum/BUG-023_ZERO_COMPLETION_TOKENS_USAGE_SWALLOWS_TEXT.md) |
 | **BUG-022** | 2026-09-02 | Emisja Surowego Tagu `<content>` i Odrzucenie przez Trae | ✅ Prawidłowe mapowanie `<content>` tylko dla Write/Edit (`f56ac58`) | [`archiwum/BUG-022...md`](file:///c:/Users/Ksawier/Pictures/Screenshots/Projekty_autorskie/deepseek-proxy-clean/bugi/archiwum/BUG-022_UNWRAPPED_CONTENT_TAG_TOOL_NAME_REJECTION.md) |

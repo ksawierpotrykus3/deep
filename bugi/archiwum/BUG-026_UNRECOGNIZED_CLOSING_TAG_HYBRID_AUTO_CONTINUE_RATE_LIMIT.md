@@ -2,7 +2,7 @@
 
 **Data zgłoszenia:** 2026-09-05  
 **Środowisko:** Trae IDE + DeepSeek Proxy (`server.py`)  
-**Status:** Zdiagnozowany / Wymaga Poprawki w `server.py`  
+**Status:** Rozwiązany / Zweryfikowany testami jednostkowymi (`tests/test_bug025_026.py` PASS)  
 **Dotknięte komponenty:** `server.py` (`close_tag_pat`, `_has_unclosed_tool_call`, obsługa rate-limit na kontach)  
 **Plik zrzutu awaryjnego:** [`data/crashed_chats/crash_20260905_112000_jwt_leg_caoy_39538b94.md`](file:///c:/Users/Ksawier/Pictures/Screenshots/Projekty_autorskie/deepseek-proxy-clean/data/crashed_chats/crash_20260905_112000_jwt_leg_caoy_39538b94.md)  
 **Dowód wizualny:** [`media_1788600042312.png`](file:///C:/Users/Ksawier/.gemini/antigravity/brain/87701fc8-c77e-455c-831f-ebcd5eee55d0/.user_uploaded/media_1788600042312.png) (dolny dymek)  
@@ -68,9 +68,21 @@ Gdy konto 5 dostało blokadę na 73 sekundy, funkcja `_auto_continue` próbował
 
 ---
 
-## 4. Wymagana Poprawka w Kodzie
+## 4. Wdrożona Poprawka w Kodzie
 
-1. **Uelastycznienie tagu zamykającego narzędzie:**  
-   Akceptować dowolny zamykający tag po poprawnym domknięciu parametrów XML (w tym `</｜｜DSML｜｜\w+>` oraz `</\w+>`), jeśli ciało parametrów zostało w pełni wygenerowane.
-2. **Natychmiastowa rotacja konta przy `rate_limit_reached`:**  
-   Gdy DeepSeek zwraca błąd *"Zbyt częste wiadomości"*, proxy nie może bezczynnie czekać 73 sekundy na zablokowanym slocie — musi natychmiast oznaczyć dany slot jako tymczasowo zajęty i przenieść wykonanie na kolejny wolny slot z puli dostępnych kont.
+1. **Uelastycznienie tagów w `_parse_tool_calls` oraz `_has_unclosed_tool_call`:**
+   - `close_tag_pat` w `_parse_tool_calls` dopuszcza teraz warianty `</｜｜DSML｜｜ask>`, `</｜｜DSML｜｜tool_call>`, `</｜｜DSML｜｜invoke>` oraz tagi pojedyncze `</ask>`, `</action>`.
+   - `_has_unclosed_tool_call` uwzględnia zarówno asymetryczne otwarcia (`<｜｜DSML｜｜ name="...">`), jak i hybrydowe domknięcia (`</｜｜DSML｜｜ask>`), bez fałszywego zliczania tagów parametrów (`</parameter>`).
+2. **Natychmiastowa rotacja konta przy `rate_limit_reached`:**
+   - W `stream_completion` (preambuła oraz strumień), jeśli wykryto błąd `rate_limit_reached`, slot jest natychmiast oznaczany w `_rate_limited_until[account_idx] = time.time() + 120`. Jeśli w puli są dostępne inne konta, proxy NIE czeka bezczynnie 73s, lecz natychmiast wywołuje wyjątek uruchamiający migrację.
+   - W punkcie wejścia `_chat_completions_impl`, jeśli przypisany slot rozmowy jest aktualnie zablokowany rate-limitem (`now < _rate_limited_until[account_idx]`), sesja zostaje płynnie przepięta na czyste konto przed rozpoczęciem zapytania.
+
+---
+
+## 5. Weryfikacja Deterministyczna
+
+Napisano testy w `tests/test_bug025_026.py`:
+- `test_bug026_parse_tool_calls_hybrid_closing_tag`: potwierdza, że wywołanie `TodoWrite` zakończone `</｜｜DSML｜｜ask>` zostaje w 100% poprawnie sparsowane do formatu OpenAI.
+- `test_bug026_unclosed_tool_call_hybrid_closing_tag`: potwierdza, że `_has_unclosed_tool_call` zwraca `False` dla kompletnego wywołania i `True` dla uciętego.
+- `test_bug026_rate_limited_account_migration_detection`: potwierdza deterministyczną rotację sesji na czysty slot po zablokowaniu konta przez rate-limit.
+Wynik: **PASS** (100%).

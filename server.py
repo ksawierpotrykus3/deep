@@ -233,6 +233,10 @@ def _detect_loop(content_buffer: str, min_len: int = 500, window: int = 1500) ->
         c2 = tail[-2*chunk_size:-chunk_size]
         c3 = tail[-3*chunk_size:-2*chunk_size]
         if c1 == c2 == c3 and len(c1.strip()) > 3:
+            # BUG-025: Ignoruj linie dekoracyjne (np. =====, -----, *****, //////, ######)
+            # chyba że powtórzenie jednolitego znaku osiągnie patologiczną długość (>= 250 znaków)
+            if len(set(c1.strip())) <= 2 and chunk_size * 3 < 250:
+                continue
             print(f"[LOOP GUARD] Detected exact repeating chunk ({len(c1)} chars) -> aborting", flush=True)
             return True
     return False
@@ -296,9 +300,12 @@ def _has_unclosed_tool_call(text: str) -> bool:
         return False
 
     # 1. Rzeczywiste tagi wywołania narzędzia (tool_call(s), invoke, call, chińskie 调用/工具/函数 oraz jawne nazwy narzędzi)
-    tool_names = r'(?:tool_calls?|invoke|tool_capability|_calls?|call|调用|調用|工具|函数|glob|runcommand|read|write|edit|grep|ls|task|todo_write|searchreplace|checkcommandstatus|deletefile|skill)'
-    open_invokes = len(re.findall(r'<\s*(?:[|\uff5c\u2502\s]*DSML[|\uff5c\u2502\s]*)?' + tool_names + r'\b[^>]*>', text, re.IGNORECASE))
-    close_invokes = len(re.findall(r'</\s*(?:[|\uff5c\u2502\s]*DSML[|\uff5c\u2502\s]*)?' + tool_names + r'\s*>', text, re.IGNORECASE))
+    tool_names = r'(?:tool_calls?|invoke|tool_capability|_calls?|call|ask|action|调用|調用|工具|函数|glob|runcommand|read|write|edit|grep|ls|task|todo_write|searchreplace|checkcommandstatus|deletefile|skill)'
+    # BUG-024 & BUG-026: open_invokes dopuszcza <｜｜DSML｜｜ name="...">, <tool_call>, <invoke> itp., ale NIE parametry
+    open_invokes = len(re.findall(r'<\s*(?:[|\uff5c\u2502\s]*DSML[|\uff5c\u2502\s]*(?:' + tool_names + r'\b|\s+name=)|' + tool_names + r'\b)[^>]*>', text, re.IGNORECASE))
+    # BUG-026: close_invokes dopuszcza </｜｜DSML｜｜ask>, </｜｜DSML｜｜>, </tool_call> itp., ale NIE parametry (</parameter>)
+    dsml_close = r'(?:[|\uff5c\u2502\s]*DSML[|\uff5c\u2502\s]*(?:ask|tool_calls?|invoke|tool_capability|_calls?|call|tool|action)?|' + tool_names + r')'
+    close_invokes = len(re.findall(rf'</\s*{dsml_close}\s*>', text, re.IGNORECASE))
     if open_invokes > close_invokes:
         return True
 
@@ -664,8 +671,10 @@ class DeepSeek:
 
         if rate_limit_detected:
             _rate_limited_until[account_idx] = time.time() + 120
-            if _retry >= 1:
-                print(f"[RETRY] Preamble rate-limited on account={account_idx}, giving up fast to migrate", flush=True)
+            now_check = time.time()
+            other_available = any(i != account_idx and self.ap.is_valid(i) and now_check >= _rate_limited_until[i] for i in range(MAX_ACCOUNTS))
+            if _retry >= 1 or other_available:
+                print(f"[RETRY] Preamble rate-limited on account={account_idx} (other_available={other_available}), giving up fast to migrate", flush=True)
                 raise RuntimeError(f"DeepSeek busy after {_retry+1} retries: preamble rate-limited")
             wait = 60 + random.randint(-10, 15)
             _rate_limited_until[account_idx] = time.time() + wait + 10
@@ -783,9 +792,11 @@ class DeepSeek:
                         or "zajęty" in err_lower or "zajety" in err_lower or "zbyt" in err_lower
                         or "message is being generated" in err_lower or "parallel_chat_limit" in fr_raw or "busy" in fr_raw.lower()
                         or "rate_limit" in fr_raw.lower()):
-                        if _retry >= 1:
-                            _rate_limited_until[account_idx] = time.time() + 120
-                            print(f"[RETRY] Giving up fast on account={account_idx} after {_retry+1} attempts to trigger migration", flush=True)
+                        _rate_limited_until[account_idx] = time.time() + 120
+                        now_check = time.time()
+                        other_available = any(i != account_idx and self.ap.is_valid(i) and now_check >= _rate_limited_until[i] for i in range(MAX_ACCOUNTS))
+                        if _retry >= 1 or other_available:
+                            print(f"[RETRY] Giving up fast on account={account_idx} (other_available={other_available}) to trigger migration", flush=True)
                             raise RuntimeError(f"DeepSeek busy after {_retry+1} retries: {err_msg}")
                         wait = 60 + random.randint(-10, 15)
                         _rate_limited_until[account_idx] = time.time() + wait + 10
@@ -1964,7 +1975,7 @@ def _parse_tool_calls(text: str, known_tools: set | list | None = None) -> list[
     # 1. Standard XML or DSML-wrapped invoke:
     # Matches <invoke name="...">, <tool_call name="...">, <_call name="...">, <call name="...">, <tool name="...">, and DSML variants (e.g. <｜｜DSML｜｜ name="...">... </invoke>)
     open_tag_pat = r'''(?:[|\uff5c\u2502\s]*DSML[|\uff5c\u2502\s]*|(?:[|\uff5c\u2502]\s*[|\uff5c\u2502]\s*DSML\s*[|\uff5c\u2502]\s*[|\uff5c\u2502]\s*)?(?:tool_call|invoke|tool_capability|_call|call|tool|调用|調用|工具|函数))'''
-    close_tag_pat = r'''(?:[|\uff5c\u2502\s]*DSML[|\uff5c\u2502\s]*|(?:[|\uff5c\u2502]\s*[|\uff5c\u2502]\s*DSML\s*[|\uff5c\u2502]\s*[|\uff5c\u2502]\s*)?(?:tool_call|invoke|tool_capability|_call|call|tool|调用|調用|工具|函数))'''
+    close_tag_pat = r'''(?:[|\uff5c\u2502\s]*DSML[|\uff5c\u2502\s]*(?:ask|tool_calls?|invoke|tool_capability|_calls?|call|tool|action)?|(?:[|\uff5c\u2502]\s*[|\uff5c\u2502]\s*DSML\s*[|\uff5c\u2502]\s*[|\uff5c\u2502]\s*)?(?:tool_call|invoke|tool_capability|_call|call|tool|ask|action|调用|調用|工具|函数))'''
     tool_pat = re.compile(
         r'''(?:<\s*(?:[|\uff5c\u2502]\s*[|\uff5c\u2502]\s*DSML\s*[|\uff5c\u2502]\s*[|\uff5c\u2502]\s*)?tool\s+)?'''
         rf'''<\s*{open_tag_pat}\s*name=(["'])([^"']*?)\1[^>]*>'''
@@ -2439,7 +2450,7 @@ def _ensure_slot(slot: int, clean: bool = False):
     print(f"[DEBUG] _ensure_slot(slot={slot}) called, current in_progress={_slot_in_progress[slot]}", flush=True)
     with _slot_locks[slot]:
         valid = ap.is_valid(slot)
-        print(f"[DEBUG] ap.is_valid({slot}) = {valid}, slots[{slot}] = {ap.slots[slot]}", flush=True)
+        print(f"[DEBUG] ap.is_valid({slot}) = {valid}", flush=True)
         if _slot_in_progress[slot]:
             raise HTTPException(401, f"Slot {slot} login in progress â€“ complete sign-in in Chrome, then retry")
         if valid and not clean:
@@ -3353,7 +3364,15 @@ def _chat_completions_impl(req: ChatRequest, raw_request: Request):
     # Pick account for this conversation
     if state and "account" in state:
         account_idx = state["account"]
-        if is_subagent:
+        now_req = time.time()
+        # BUG-026: Jeśli zapisane konto w sesji jest aktualnie zablokowane rate-limitem,
+        # natychmiast rotuj na wolne, czyste konto zamiast wchodzić w błąd 429 / 73s freeze!
+        if now_req < _rate_limited_until[account_idx]:
+            free_acc = ap.pick_for_conv(conv_key, is_subagent=is_subagent)
+            if free_acc != account_idx and now_req >= _rate_limited_until[free_acc]:
+                print(f"[RATE-LIMIT] Account {account_idx} currently rate-limited (for {_rate_limited_until[account_idx]-now_req:.1f}s) -> migrating conv {conv_key[:20]} to clean account {free_acc}", flush=True)
+                account_idx = free_acc
+        elif is_subagent:
             with _slot_busy_lock:
                 is_curr_busy = _slot_busy[account_idx]
             if is_curr_busy:
@@ -3544,6 +3563,19 @@ def _chat_completions_impl(req: ChatRequest, raw_request: Request):
                         print(f"[VISION] Uploaded image {idx+1}: {file_id}", flush=True)
                     elif img.get("url"):
                         import requests as req_lib
+                        from urllib.parse import urlparse
+                        import ipaddress
+                        _u = urlparse(img["url"])
+                        _host = _u.hostname or ""
+                        if _u.scheme not in ("http", "https"):
+                            raise ValueError(f"Nieobsługiwany protokół obrazu: {_u.scheme}")
+                        try:
+                            _ip = ipaddress.ip_address(_host)
+                            if _ip.is_private or _ip.is_loopback or _ip.is_link_local or _ip.is_reserved or _ip.is_multicast:
+                                raise ValueError("Niedozwolony adres obrazu (sieć prywatna)")
+                        except ValueError:
+                            if _host.lower() in ("localhost",) or _host.endswith(".local") or _host.endswith(".internal"):
+                                raise ValueError("Niedozwolony adres obrazu (host lokalny)")
                         resp = req_lib.get(img["url"], timeout=30)
                         if resp.status_code == 200:
                             mime = resp.headers.get("content-type", "image/png")
@@ -4330,5 +4362,6 @@ if __name__ == "__main__":
         print("No accounts found. Open a SECOND CMD in this folder and run:  login_slot.bat 0")
     threading.Thread(target=_sweeper_loop, daemon=True).start()
     _port = int(os.environ.get("PORT", 4570))
-    print(f"Starting on http://localhost:{_port}")
-    uvicorn.run(app, host="0.0.0.0", port=_port)
+    _host = os.environ.get("HOST", "127.0.0.1")
+    print(f"Starting on http://{_host}:{_port}")
+    uvicorn.run(app, host=_host, port=_port)

@@ -2,7 +2,7 @@
 
 **Data zgłoszenia:** 2026-09-05  
 **Środowisko:** Trae IDE + DeepSeek Proxy (`server.py`)  
-**Status:** Zdiagnozowany / Wymaga Poprawki w `server.py`  
+**Status:** Rozwiązany / Zweryfikowany testami jednostkowymi (`tests/test_bug025_026.py` PASS)  
 **Dotknięte komponenty:** `server.py` (`_detect_loop`, streaming narzędzia `Write`)  
 **Plik zrzutu awaryjnego:** [`data/crashed_chats/crash_20260905_111650_jwt_leg_caoy_8af6b1f5.md`](file:///c:/Users/Ksawier/Pictures/Screenshots/Projekty_autorskie/deepseek-proxy-clean/data/crashed_chats/crash_20260905_111650_jwt_leg_caoy_8af6b1f5.md)  
 **Dowód wizualny:** [`media_1788599836199.png`](file:///C:/Users/Ksawier/.gemini/antigravity/brain/87701fc8-c77e-455c-831f-ebcd5eee55d0/.user_uploaded/media_1788599836199.png) (górny dymek)  
@@ -83,12 +83,24 @@ def _detect_loop(content_buffer: str, min_len: int = 500, window: int = 1500) ->
 
 ---
 
-## 4. Wymagana Poprawka w Kodzie
+## 4. Wdrożona Poprawka w Kodzie
 
-W `_detect_loop` należy dodać filtr ignorujący powtórzenia znaków jednorodnych (linii dekoracyjnych):
+W `_detect_loop` dodano filtr ignorujący separatory i linie formatujące:
 ```python
-# Ignoruj linie dekoracyjne (np. =====, -----, *****, //////, ######)
-if len(set(c1.strip())) <= 2:
-    continue
+if c1 == c2 == c3 and len(c1.strip()) > 3:
+    # BUG-025: Ignoruj linie dekoracyjne (np. =====, -----, *****, //////, ######)
+    # chyba że powtórzenie jednolitego znaku osiągnie patologiczną długość (>= 250 znaków)
+    if len(set(c1.strip())) <= 2 and chunk_size * 3 < 250:
+        continue
+    print(f"[LOOP GUARD] Detected exact repeating chunk ({len(c1)} chars) -> aborting", flush=True)
+    return True
 ```
-Dzięki temu linie oddzielające nie będą powodowały fałszywych alarmów, podczas gdy rzeczywiste zapętlenia zdań lub funkcji będą nadal skutecznie wyłapywane.
+
+---
+
+## 5. Weryfikacja Deterministyczna
+
+Napisano testy w `tests/test_bug025_026.py`:
+- `test_bug025_detect_loop_ignores_decorative_comments`: potweirdza odporność na banery `// ===`, `# ---`, `|---|---|`, `/* *** */`.
+- `test_bug025_detect_loop_catches_pathological_repetition`: potwierdza, że pętle patologiczne zdań oraz uciekające znaki (>= 250 znaków) są bezwzględnie przerywane.
+Wynik: **PASS** (100%).
