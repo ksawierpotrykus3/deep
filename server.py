@@ -292,6 +292,23 @@ def _heartbeat_iter(gen, interval: float = 15.0):
             raise val
 
 
+_TOOL_START_PATTERNS = re.compile(
+    r'(?:'
+    r'</\s*(?:think|thought)\s*>'
+    r'|'
+    r'<\s*(?:[|\uff5c\u2502\s]*DSML[|\uff5c\u2502\s]*'
+    r'|(?:[|\uff5c\u2502]\s*[|\uff5c\u2502]\s*DSML\s*[|\uff5c\u2502]\s*[|\uff5c\u2502]\s*)?'
+    r'(?:tool_calls?|invoke|tool_capability|_calls?|call|tool|action|parameter|参数|參數)\b'
+    r'|[|｜\uff5c\s]*tool\s*call\s*begin[|｜\uff5c\s]*'
+    r'|(?:Read|Write|Edit|SearchReplace|Grep|Glob|LS|RunCommand|Task|CheckCommandStatus|DeleteFile|TodoWrite|Skill|AskUserQuestion|NotifyUser|WebSearch|WebFetch|GetDiagnostics|OpenPreview|run_mcp)\b'
+    r')'
+    r')',
+    re.IGNORECASE
+)
+
+_TAG_PREFIX_PAT = re.compile(r'<\s*(?:[|\uff5c\u2502\s]*DSML[|\uff5c\u2502\s]*|[a-zA-Z_|｜\uff5c\-]+)?$', re.IGNORECASE)
+
+
 def _has_unclosed_tool_call(text: str) -> bool:
     """Deterministycznie sprawdza, czy w buforze znajduje się otwarty, ale niedomknięty tag narzędzia.
     NIGDY nie fałszuje alarmu, gdy model domknął wszystkie wewnętrzne <invoke>...</invoke>, ale pominął zewnętrzny <tool_calls>.
@@ -745,6 +762,7 @@ class DeepSeek:
             thinking_buffer = ""  # wyłącznie faza THINK — reasoning, NIE idzie do Trae
             response_started = False
             thinking_active = False   # True gdy DeepSeek zadeklarował fragment THINK (myślenie)
+            reasoning_yielded_len = 0
             prev_yielded = 0
             raw_count = 0
             finished_normally = False
@@ -752,10 +770,13 @@ class DeepSeek:
 
             def _route_token(text):
                 """Kieruje token treści do właściwego bufora na podstawie fazy.
-                Zwraca treść do yieldowania (tylko faza RESPONSE) lub ''."""
-                nonlocal content_buffer, thinking_buffer, response_started, thinking_active, prev_yielded
+                Yields chunki tekstu do wyemitowania (ReasoningChunk dla fazy THINK, str dla RESPONSE).
+                BUG-031: Jeśli w trakcie fazy THINK model zacznie generować znaczniki narzędzi
+                (<tool_calls>, <invoke> itp.) lub </think>, następuje natychmiastowe dynamiczne
+                przełączenie fazy z THINK na RESPONSE."""
+                nonlocal content_buffer, thinking_buffer, response_started, thinking_active, prev_yielded, reasoning_yielded_len
                 if not text:
-                    return ""
+                    return
                 if not response_started and not thinking_active:
                     # Brak deklaracji fazy = tryb bez myślenia (lub starszy format):
                     # bare tokeny to RESPONSE. Myślenie jest tłumione TYLKO gdy
@@ -768,30 +789,71 @@ class DeepSeek:
                     inc = content_buffer[prev_yielded:]
                     if inc:
                         prev_yielded = len(content_buffer)
-                        return inc
-                    return ""
+                        yield inc
+                    return
                 # Faza THINK — reasoning streamujemy do Trae jako reasoning_content (BUG-004)
                 thinking_buffer += text
                 if watermark_uuid:
                     monitor.thinking_token(watermark_uuid, count=max(1, len(text.split())))
-                return _ReasoningChunk(text)
+
+                # BUG-031: Sprawdź, czy w strumieniu myślenia nie pojawił się początek wywołania narzędzia
+                # lub jawny znacznik końca myślenia </think>.
+                m = _TOOL_START_PATTERNS.search(thinking_buffer)
+                if m:
+                    split_pos = m.start()
+                    # Wyemituj zaległe myślenie sprzed znacznika narzędzia
+                    if split_pos > reasoning_yielded_len:
+                        rem_reasoning = thinking_buffer[reasoning_yielded_len:split_pos]
+                        reasoning_yielded_len = split_pos
+                        if rem_reasoning:
+                            yield _ReasoningChunk(rem_reasoning)
+
+                    matched_str = m.group(0)
+                    if re.match(r'^</\s*(?:think|thought)\s*>', matched_str, re.IGNORECASE):
+                        tool_content = thinking_buffer[m.end():]
+                    else:
+                        tool_content = thinking_buffer[split_pos:]
+
+                    thinking_buffer = thinking_buffer[:split_pos]
+                    thinking_active = False
+                    response_started = True
+                    content_buffer = tool_content
+                    prev_yielded = len(content_buffer)
+                    if tool_content:
+                        yield tool_content
+                    return
+
+                # Jeśli nie ma narzędzia, powstrzymaj emisję prefiksu tagu (np. '<', '<tool'),
+                # aby w razie rozpoczęcia wywołania narzędzia w kolejnym tokenie nie wyciekło ono do reasoning.
+                pref_m = _TAG_PREFIX_PAT.search(thinking_buffer)
+                safe_end = pref_m.start() if pref_m else len(thinking_buffer)
+                if safe_end > reasoning_yielded_len:
+                    to_yield = thinking_buffer[reasoning_yielded_len:safe_end]
+                    reasoning_yielded_len = safe_end
+                    if to_yield:
+                        yield _ReasoningChunk(to_yield)
 
             def _begin_phase(ftype, fcontent):
                 """Obsługuje deklarację fragmentu THINK/RESPONSE: ustawia fazę i emituje
-                początkowy fragment treści. Zwraca treść do yieldowania lub ''."""
-                nonlocal response_started, thinking_active, content_buffer, thinking_buffer, prev_yielded
+                początkowy fragment treści. Yields chunki do emisji."""
+                nonlocal response_started, thinking_active, content_buffer, thinking_buffer, prev_yielded, reasoning_yielded_len
                 if ftype == "THINK":
                     thinking_active = True
                     response_started = False
                     if watermark_uuid:
                         monitor.thinking_token(watermark_uuid, count=len(fcontent.split()) if fcontent else 1)
                     if fcontent:
-                        thinking_buffer += fcontent
-                        return _ReasoningChunk(fcontent)
-                    return ""
+                        yield from _route_token(fcontent)
+                    return
                 if ftype == "RESPONSE":
                     thinking_active = False
                     response_started = True
+                    # Spłucz wszelkie pozostałe reasoning_content z bufora myślenia
+                    if thinking_buffer and len(thinking_buffer) > reasoning_yielded_len:
+                        rem = thinking_buffer[reasoning_yielded_len:]
+                        reasoning_yielded_len = len(thinking_buffer)
+                        if rem:
+                            yield _ReasoningChunk(rem)
                     if watermark_uuid:
                         monitor.token(watermark_uuid)
                     if fcontent:
@@ -799,9 +861,8 @@ class DeepSeek:
                         inc = content_buffer[prev_yielded:]
                         if inc:
                             prev_yielded = len(content_buffer)
-                            return inc
-                    return ""
-                return ""
+                            yield inc
+                    return
             # Diagnostyka: świeży plik z SUROWYM strumieniem DeepSeek (pełne linie JSON,
             # bez obcinania do 200 znaków). Nadpisywany przy każdym strumieniu, więc po
             # następnej reprodukcji błędu zobaczymy dokładny format thinking/response/tools.
@@ -872,9 +933,9 @@ class DeepSeek:
                         if isinstance(_frags, list):
                             for _frag in _frags:
                                 if isinstance(_frag, dict):
-                                    _tok = _begin_phase(_frag.get("type"), _frag.get("content") or "")
-                                    if _tok:
-                                        yield _tok
+                                    for _tok in _begin_phase(_frag.get("type"), _frag.get("content") or ""):
+                                        if _tok:
+                                            yield _tok
                         _inner_status = str(_inner.get("status", _inner.get("state", ""))).upper()
                         if "FINISHED" in _inner_status or "COMPLETED" in _inner_status or "DONE" in _inner_status:
                             finished_normally = True
@@ -901,20 +962,24 @@ class DeepSeek:
                 # Tokeny treści przychodzą dwiema ścieżkami: response/fragments/-1/content
                 # ORAZ pustą ścieżką (p=""). Obie są deltami bieżącej fazy (THINK lub RESPONSE).
                 if path == "response/fragments/-1/content" and isinstance(val, str) and val:
-                    _tok = _route_token(val)
-                    if _tok:
-                        yield _tok
-                    elif thinking_active:
+                    yielded_any = False
+                    for _tok in _route_token(val):
+                        if _tok:
+                            yielded_any = True
+                            yield _tok
+                    if not yielded_any and thinking_active:
                         yield _HEARTBEAT_SENTINEL
                     if _detect_loop(content_buffer):
                         loop_aborted = True
                         break
                     continue
                 if not path and isinstance(val, str) and val:
-                    _tok = _route_token(val)
-                    if _tok:
-                        yield _tok
-                    elif thinking_active:
+                    yielded_any = False
+                    for _tok in _route_token(val):
+                        if _tok:
+                            yielded_any = True
+                            yield _tok
+                    if not yielded_any and thinking_active:
                         yield _HEARTBEAT_SENTINEL
                     # Anti-loop guard: przetnij petle tokenow (loop_aborted=True)
                     if _detect_loop(content_buffer):
@@ -924,21 +989,55 @@ class DeepSeek:
                 if path == "response/fragments" and isinstance(val, list):
                     for fragment in val:
                         if isinstance(fragment, dict):
-                            _tok = _begin_phase(fragment.get("type"), fragment.get("content") or "")
-                            if _tok:
-                                yield _tok
-                            elif thinking_active:
+                            yielded_any = False
+                            for _tok in _begin_phase(fragment.get("type"), fragment.get("content") or ""):
+                                if _tok:
+                                    yielded_any = True
+                                    yield _tok
+                            if not yielded_any and thinking_active:
                                 yield _HEARTBEAT_SENTINEL
                     # Anti-loop guard: przetnij petle tokenow (loop_aborted=True)
                     if _detect_loop(content_buffer):
                         loop_aborted = True
                         break
                     continue
-            if not response_started:
-                # Faza RESPONSE nigdy nie wystartowała — reasoning (THINK) NIE może wyciec
-                # do Trae. content_buffer trzyma wyłącznie treść RESPONSE (więc jest pusty),
-                # a myślenie celowo siedzi w thinking_buffer i nie jest yieldowane.
-                if thinking_buffer:
+            if thinking_active and thinking_buffer and len(thinking_buffer) > reasoning_yielded_len:
+                rem = thinking_buffer[reasoning_yielded_len:]
+                reasoning_yielded_len = len(thinking_buffer)
+                if rem:
+                    yield _ReasoningChunk(rem)
+
+            if not response_started or not content_buffer.strip():
+                # BUG-031: Post-Stream Safety Net. Sprawdź, czy narzędzia (kompletne lub urwane)
+                # nie zostały w całości uwięzione w thinking_buffer.
+                recovered_tools = _parse_tool_calls(thinking_buffer)
+                unclosed_in_think = _has_unclosed_tool_call(thinking_buffer)
+                if recovered_tools or unclosed_in_think:
+                    if recovered_tools:
+                        first_pos = recovered_tools[0][0]
+                    else:
+                        m_unclosed = _TOOL_START_PATTERNS.search(thinking_buffer)
+                        first_pos = m_unclosed.start() if m_unclosed else 0
+
+                    tc_tag = thinking_buffer.rfind("<tool_calls>", 0, first_pos)
+                    if tc_tag != -1:
+                        first_pos = tc_tag
+                    else:
+                        tc_tag_dsml = thinking_buffer.rfind("<tool_calls", 0, first_pos)
+                        if tc_tag_dsml != -1:
+                            first_pos = tc_tag_dsml
+
+                    extracted_content = thinking_buffer[first_pos:]
+                    thinking_buffer = thinking_buffer[:first_pos]
+                    thinking_active = False
+                    response_started = True
+                    content_buffer += extracted_content
+                    inc = content_buffer[prev_yielded:]
+                    if inc:
+                        prev_yielded = len(content_buffer)
+                        yield inc
+                    print(f"[BUG-031 RECOVERY] Recovered content ({len(extracted_content)} chars, tools={len(recovered_tools)}, unclosed={unclosed_in_think}) from thinking_buffer!", flush=True)
+                elif thinking_buffer:
                     print(f"[THINK] captured {len(thinking_buffer)} chars of reasoning (suppressed, not leaked)", flush=True)
 
             # ── Moduł 2: Transparentny Auto-Continue ──
