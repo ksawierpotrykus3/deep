@@ -2549,7 +2549,38 @@ def _parse_tool_calls(text: str, known_tools: set | list | None = None) -> list[
 
 # Tags that should be stripped from displayed text (not parsed as tool calls)
 _CALL_MARKER = "\u8c03\u7528"
+
+def _clean_dsml_wait(text: str) -> str:
+    """BUG-033: Usuwa wewnętrzne znaczniki bezczynności DeepSeek:
+    <｜｜DSML｜｜_wait>—brak</｜｜DSML｜｜_wait>
+    oraz wszelkie ich warianty (np. <|DSML|_wait>...</|DSML|_wait>, <DSML_wait/> itp.).
+    Zapobiega paraliżowi bufora streamingowego i nie dopuszcza do fałszywych alarmów pętli.
+    """
+    if not text or "wait" not in text.lower():
+        return text
+    # 1. Pełny blok wraz z zawartością (np. —brak, —无, puste linie):
+    pat_block = re.compile(
+        r'<\s*[|｜\uff5c\u2502\s]*DSML[|｜\uff5c\u2502\s]*_wait\b[^>]*>[\s\S]*?</\s*[|｜\uff5c\u2502\s]*DSML[|｜\uff5c\u2502\s]*_wait\s*>',
+        re.IGNORECASE
+    )
+    text = pat_block.sub("", text)
+    # 2. Samodzielny, samozamykający lub urwany tag _wait:
+    pat_single = re.compile(
+        r'</?\s*[|｜\uff5c\u2502\s]*DSML[|｜\uff5c\u2502\s]*_wait\b[^>]*>',
+        re.IGNORECASE
+    )
+    text = pat_single.sub("", text)
+    # 3. Format nawiasów kwadratowych: [/｜｜DSML｜｜_wait] itp.
+    pat_sq = re.compile(
+        r'\[/?\s*[|｜\uff5c\u2502\s]*DSML[|｜\uff5c\u2502\s]*_wait\b[^\]]*\]',
+        re.IGNORECASE
+    )
+    return pat_sq.sub("", text)
+
 _STRIP_TAGS = re.compile(
+    r"<\s*[|｜\uff5c\u2502\s]*DSML[|｜\uff5c\u2502\s]*_wait\b[^>]*>[\s\S]*?</\s*[|｜\uff5c\u2502\s]*DSML[|｜\uff5c\u2502\s]*_wait\s*>|"  # BUG-033: bloki _wait z zawartością (np. —brak)
+    r"</?\s*[|｜\uff5c\u2502\s]*DSML[|｜\uff5c\u2502\s]*_wait\b[^>]*>|"                                                            # BUG-033: pojedyncze tagi _wait
+    r"\[/?\s*[|｜\uff5c\u2502\s]*DSML[|｜\uff5c\u2502\s]*_wait\b[^\]]*\]|"                                                          # BUG-033: kwadratowe tagi _wait
     r"</?system-reminder[^>]*>|</?-reminder[^>]*>|"
     r"-reminder>[^\n]*|"
     r"<critical_directive>[\s\S]*?</critical_directive>|"
@@ -3867,18 +3898,15 @@ def _chat_completions_impl(req: ChatRequest, raw_request: Request):
                     )
                 else:
                     _prepend = (
-                        "## ⚠️ CRITICAL — USE SUBAGENTS FOR EVERYTHING NON-TRIVIAL\n"
-                        "You are a COORDINATOR, not a worker. Your role:\n"
-                        "- Talk to the user, ask questions, explain results\n"
-                        "- Launch subagents (Task tool) for ALL reading, searching, analyzing, auditing\n"
-                        "- Launch subagents in PARALLEL for independent work — multiple at once\n"
-                        "- After subagents finish, summarize and present results to user\n"
-                        "- Write final code/document changes based on subagent findings\n"
+                        "## ⚠️ ARCHITECTURE — COORDINATOR & SUBAGENT ROLES\n"
+                        "You are the lead COORDINATOR:\n"
+                        "- Talk to the user, understand requirements, plan architecture, and explain results.\n"
+                        "- Launch subagents (Task tool) in PARALLEL for broad codebase exploration, directory audits, and reading multiple files across the project to keep your context window clean.\n"
+                        "- You CAN and SHOULD use Read/Write/Edit/SearchReplace directly when inspecting or modifying specific target files requested by the user, or when full file content is required for synthesis or editing.\n"
+                        "- DO NOT read dozens of files sequentially yourself — launch parallel subagents (Task) instead for bulk research.\n"
+                        "- After subagents finish, synthesize their findings, present clear conclusions, or perform necessary file modifications.\n"
                         "- When delegating file inspection to subagents, provide full or project-relative paths (e.g. including subfolder), or instruct them to locate files with Glob.\n"
-                        "WHY: Every file you Read() fills your context window. Subagents use their OWN context.\n"
-                        "Delegating reads/searches keeps YOUR context free for thinking and coordinating.\n"
-                        "DO NOT use Read/Glob/Grep/SearchCodebase yourself if a subagent can do it.\n"
-                        "DO NOT read files one-by-one — launch parallel subagents instead.\n\n"
+                        "WHY: Delegating broad searches keeps YOUR context window clean for high-level reasoning, while allowing you direct access to the files you actively edit.\n\n"
                     )
                     if _mode == "web":
                         _prepend += (
@@ -4296,7 +4324,9 @@ def _chat_completions_impl(req: ChatRequest, raw_request: Request):
                             continue
 
                         tail = full[sent_until:]
-                        if re.search(r'</?\s*(?:[|｜\uff5c\u2502\s]*DSML|tool_call|invoke|_call|user_input|parameter|参数|參數|pattern|path|file_path|command|glob|grep|read|write|task|skill)\b', tail, re.IGNORECASE):
+                        # BUG-033: Ignoruj wewnętrzne pseudotagi _wait przy sprawdzaniu otwartych narzędzi
+                        tail_check = _clean_dsml_wait(tail)
+                        if re.search(r'</?\s*(?:[|｜\uff5c\u2502\s]*DSML|tool_call|invoke|_call|user_input|parameter|参数|參數|pattern|path|file_path|command|glob|grep|read|write|task|skill)\b', tail_check, re.IGNORECASE):
                             continue
 
                         delta = full[sent_until:]
@@ -4345,23 +4375,29 @@ def _chat_completions_impl(req: ChatRequest, raw_request: Request):
                 # Flush any held-back trailing text that is confirmed not to be a tool call
                 if sent_until < len(full):
                     remaining = full[sent_until:]
-                    if not _has_unclosed_tool_call(full) and not re.search(r'<\s*(?:[|\uff5c\u2502\s]*DSML|tool_call|invoke|_call|user_input|parameter|参数|參數|pattern|path)', remaining, re.IGNORECASE):
-                        clean_rem = _STRIP_TAGS.sub("", remaining)
+                    rem_check = _clean_dsml_wait(remaining)
+                    if not _has_unclosed_tool_call(rem_check) and not re.search(r'<\s*(?:[|\uff5c\u2502\s]*DSML|tool_call|invoke|_call|user_input|parameter|参数|參數|pattern|path)', rem_check, re.IGNORECASE):
+                        clean_rem = _STRIP_TAGS.sub("", rem_check)
                         if clean_rem:
                             yield _chunk({"content": clean_rem})
                     sent_until = len(full)
 
-                # BUG-024: Bezpiecznik pustych deklaracji (Empty Promise Guard).
+                # BUG-024 & BUG-033: Bezpiecznik pustych deklaracji oraz paraliżu _wait.
                 # Jeśli model nie wyemitował żadnego narzędzia (tools_yielded == 0),
-                # ale zakończył wypowiedź obietnicą podjęcia akcji w czacie,
-                # rzuć jawny komunikat o braku wywołania narzędzia zamiast cichego sukcesu.
+                # ale zakończył wypowiedź obietnicą podjęcia akcji lub wyemitował wyłącznie tagi _wait,
+                # rzuć jawny komunikat o braku wywołania narzędzia zamiast cichego sukcesu / zamrożenia na 0%.
                 if tools_yielded == 0:
-                    if not full.strip():
+                    clean_full = _clean_dsml_wait(full)
+                    clean_full = _STRIP_TAGS.sub("", clean_full).strip()
+                    if not clean_full:
                         print(f"[STREAM ZERO TOKENS] No content and no tools generated for {conv_key[:24]}", flush=True)
                         success = False
-                        _alert = "\n\n[BŁĄD PROXY: Serwer DeepSeek nie zwrócił żadnych tokenów (pusty strumień). Ponów zapytanie w nowym czacie.]"
+                        if "_wait" in full.lower():
+                            _alert = "\n\n[BŁĄD PROXY: Model DeepSeek wyemitował wewnętrzny znacznik bezczynności (_wait) zamiast wywołania narzędzia. Ponów polecenie.]"
+                        else:
+                            _alert = "\n\n[BŁĄD PROXY: Serwer DeepSeek nie zwrócił żadnych tokenów (pusty strumień). Ponów zapytanie w nowym czacie.]"
                         yield _chunk({"content": _alert})
-                    elif re.search(r'(?:odpalam|uruchamiam|zaczn[eę] od (?:czytania|przeczytania|szukania)|szukam szerzej|zaraz (?:przeczytam|sprawdz[eę]|odpal[eę])|bior[eę] si[eę] za|let me (?:launch|read|check|run))[^\.\n]*[\.\!\?]?\s*$', full.strip(), re.IGNORECASE):
+                    elif re.search(r'(?:odpalam|uruchamiam|zaczn[eę] od (?:czytania|przeczytania|szukania)|szukam szerzej|zaraz (?:przeczytam|sprawdz[eę]|odpal[eę])|bior[eę] si[eę] za|let me (?:launch|read|check|run))[^\.\n]*[\.\!\?]?\s*$', clean_full, re.IGNORECASE):
                         _alert = "\n\n[BŁĄD PROXY: Model zadeklarował wykonanie akcji, ale nie wyemitował bloku narzędzia <tool_call>. Ponów polecenie.]"
                         yield _chunk({"content": _alert})
                         success = True
