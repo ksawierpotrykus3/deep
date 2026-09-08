@@ -1435,6 +1435,52 @@ def _compress_tool_results(messages: list[dict], threshold: int = 1500) -> list[
     return result
 
 
+_last_known_env = {
+    "cwd": os.path.abspath(os.getcwd()),
+    "os": "windows" if os.name == "nt" else os.name
+}
+
+
+def _extract_environment_info(messages: list[dict]) -> tuple[str, str]:
+    """Wyciąga Primary working directory oraz Operating system z tagów <system-reminder>."""
+    global _last_known_env
+    cwd = None
+    os_name = None
+    if messages:
+        for m in messages:
+            c = m.get("content", "")
+            texts = []
+            if isinstance(c, list):
+                for part in c:
+                    if isinstance(part, dict) and part.get("type") == "text":
+                        texts.append(part.get("text", ""))
+                    elif isinstance(part, str):
+                        texts.append(part)
+            elif isinstance(c, str):
+                texts.append(c)
+            full_text = "\n".join(texts)
+            if not full_text:
+                continue
+            norm = full_text.replace('\\r\\n', '\n').replace('\\n', '\n')
+            if "Primary working directory:" in norm and not cwd:
+                m_cwd = re.search(r'Primary working directory:\s*([^\n\r<]+)', norm)
+                if m_cwd:
+                    cwd = m_cwd.group(1).strip()
+            if "Operating system:" in norm and not os_name:
+                m_os = re.search(r'Operating system:\s*([^\n\r<]+)', norm)
+                if m_os:
+                    os_name = m_os.group(1).strip()
+            if cwd and os_name:
+                break
+
+    if cwd:
+        _last_known_env["cwd"] = cwd
+    if os_name:
+        _last_known_env["os"] = os_name
+
+    return _last_known_env["cwd"], _last_known_env["os"]
+
+
 def _clean_system_reminders(text: str) -> str:
     """Usuwa tagi <system-reminder>...</system-reminder>, <critical_directive>, boilerplate Trae oraz odpakowuje <user_input>...<user_input>."""
     if not isinstance(text, str):
@@ -3354,6 +3400,7 @@ def _chat_completions_impl(req: ChatRequest, raw_request: Request):
 
     roles = {m.get("role") for m in req.messages}
     tcs = sum(1 for m in req.messages if m.get("tool_calls"))
+    _extract_environment_info(req.messages)
     print(f"[REQUEST] roles={roles} tools={tcs} msgs={len(req.messages)}", flush=True)
     # Log all messages structure for debugging
     with open(MSG_LOG, "a", encoding="utf-8") as mf:
@@ -3771,16 +3818,25 @@ def _chat_completions_impl(req: ChatRequest, raw_request: Request):
                     print(f"[CLEAN] Preserved explicit custom system prompt ({len(orig_sys)} chars)", flush=True)
             elif is_subagent:
                 # SUBAGENT for coding: replace 15KB Trae prompt with minimal task-focused version
+                _cwd, _os = _extract_environment_info(req.messages)
                 _orig_len = len(clean_msgs[0]["content"])
                 clean_msgs[0] = dict(clean_msgs[0], content=(
-                    "You are a subagent. Execute the task below using the provided tools.\n"
-                    "Be thorough and complete. Synthesize findings into concise facts.\n"
-                    "Quote at most 2-3 key code lines when evidence is needed.\n"
-                    "NEVER copy raw tool dumps with line-number prefixes like '120→'.\n"
-                    "Do not chat, explain, repeat the prompt, echo task instructions, list file paths, or write preambles before calling tools — invoke the tools directly and immediately.\n"
-                    "TOOL CALLS: Always invoke tools individually using standard XML tags like <invoke name=\"Tool\"><parameter name=\"param\">value</parameter></invoke> or <Tool><param>val</param></Tool>. NEVER concatenate unclosed tags like <glob>...<grep>."
+                    f"You are a subagent. Execute the task below using the provided tools.\n"
+                    f"ENVIRONMENT:\n"
+                    f"- Operating system: {_os}\n"
+                    f"- Primary workspace root: {_cwd}\n"
+                    f"PATH & TOOL RULES:\n"
+                    f"- Read tool strictly requires an existing absolute path. NEVER guess or invent non-existent absolute paths like /Users/... or /home/...\n"
+                    f"- If you are given a relative path (e.g. 'src/...'), a filename, or do not know the exact absolute path on {_os}, ALWAYS invoke 'Glob' (e.g. pattern='**/filename.tsx') or 'LS' first to locate the exact path before calling 'Read'!\n"
+                    f"- If you already have the verified full path on {_os}, you can call 'Read' directly.\n"
+                    f"EXECUTION RULES:\n"
+                    f"- Be thorough and complete. Synthesize findings into concise facts.\n"
+                    f"- Quote at most 2-3 key code lines when evidence is needed.\n"
+                    f"- NEVER copy raw tool dumps with line-number prefixes like '120→'.\n"
+                    f"- Do not chat, explain, repeat the prompt, echo task instructions, list file paths, or write preambles before calling tools — invoke the tools directly and immediately.\n"
+                    f"- TOOL CALLS: Always invoke tools individually using standard XML tags like <invoke name=\"Tool\"><parameter name=\"param\">value</parameter></invoke> or <Tool><param>val</param></Tool>. NEVER concatenate unclosed tags like <glob>...<grep>."
                 ))
-                print(f"[SUBAGENT] Real subagent detected. Prompt: {_orig_len}→{len(clean_msgs[0]['content'])} chars (saved {_orig_len - len(clean_msgs[0]['content'])})", flush=True)
+                print(f"[SUBAGENT] Real subagent detected (env: {_os}, cwd={_cwd}). Prompt: {_orig_len}→{len(clean_msgs[0]['content'])} chars (saved {_orig_len - len(clean_msgs[0]['content'])})", flush=True)
             else:
                 # MAIN AGENT for coding: different prompt depending on mode
                 _mode = _get_mode()
@@ -3818,6 +3874,7 @@ def _chat_completions_impl(req: ChatRequest, raw_request: Request):
                         "- Launch subagents in PARALLEL for independent work — multiple at once\n"
                         "- After subagents finish, summarize and present results to user\n"
                         "- Write final code/document changes based on subagent findings\n"
+                        "- When delegating file inspection to subagents, provide full or project-relative paths (e.g. including subfolder), or instruct them to locate files with Glob.\n"
                         "WHY: Every file you Read() fills your context window. Subagents use their OWN context.\n"
                         "Delegating reads/searches keeps YOUR context free for thinking and coordinating.\n"
                         "DO NOT use Read/Glob/Grep/SearchCodebase yourself if a subagent can do it.\n"
