@@ -708,9 +708,10 @@ class DeepSeek:
                     d = json.loads(decoded[6:])
                     if d.get("type") == "error":
                         err = d.get("content", "Unknown error")
-                        print(f"[ERROR] DeepSeek error: {err}", flush=True)
-                        if "length limit" in err.lower() or "start a new chat" in err.lower() or "context_length" in err.lower() or "content is too long" in err.lower() or "input_exceeds_limit" in err.lower():
-                            raise RuntimeError(f"DeepSeek error: {err}")
+                        fr = str(d.get("finish_reason") or "")
+                        print(f"[ERROR] DeepSeek error: {err} (finish_reason={fr})", flush=True)
+                        if "length limit" in err.lower() or "start a new chat" in err.lower() or "context_length" in err.lower() or "content is too long" in err.lower() or "input_exceeds_limit" in err.lower() or "limit długości" in err.lower() or "rozpocznij nowy czat" in err.lower() or "context_length" in fr.lower():
+                            raise RuntimeError(f"DeepSeek error [{fr}]: {err}" if fr else f"DeepSeek error: {err}")
                         rate_limit_detected = True
                         break
                     rid = d.get("response_message_id")
@@ -921,7 +922,7 @@ class DeepSeek:
                         result_meta["finished_normally"] = retry_meta.get("finished_normally", False)
                         yield from new_gen
                         return
-                    raise RuntimeError(f"DeepSeek error: {err_msg}")
+                    raise RuntimeError(f"DeepSeek error [{fr_raw}]: {err_msg}" if fr_raw else f"DeepSeek error: {err_msg}")
                 # v.response moĹĽe zawierać sygnał zakoĹ„czenia — sprawdź przed skipnięciem
                 _v = data.get("v")
                 if isinstance(_v, dict) and "response" in _v:
@@ -1868,7 +1869,7 @@ def _build_prompt(messages: list[dict], tools: list[dict] | None = None, images:
                     else:
                         rest[i]["content"] = [{"type": "text", "text": old_content}] + img_uris
                     break
-    # ── Tool Schemas & Instructions Suffix ──
+    # ── Tool Schemas & Instructions Suffix (Compact Format: ~4k vs 44k chars) ──
     tools_suffix = ""
     if tools:
         tools_suffix += "\n\n# Available Tool Schemas\n"
@@ -1877,40 +1878,23 @@ def _build_prompt(messages: list[dict], tools: list[dict] | None = None, images:
                 continue
             fn = t.get("function", t)
             name = fn.get("name", "?")
-            desc = fn.get("description", "")
+            desc = fn.get("description", "").split("\n")[0][:150].strip()
             params = fn.get("parameters", {})
-            tools_suffix += f"\n## {name}\n"
-            if desc:
-                tools_suffix += f"{desc}\n"
+            param_strs = []
             if isinstance(params, dict):
                 props = params.get("properties", {})
-                required = params.get("required", [])
-                if props:
-                    tools_suffix += "Parameters:\n"
+                required = set(params.get("required", [])) if isinstance(params.get("required"), list) else set()
+                if isinstance(props, dict):
                     for pname, pdef in props.items():
+                        if not isinstance(pdef, dict):
+                            continue
                         ptype = pdef.get("type", "any")
-                        req = " (required)" if pname in required else ""
-                        pdesc = pdef.get("description", "")
+                        req = "*" if pname in required else ""
                         enum = pdef.get("enum", [])
-                        extra = f" [{', '.join(enum)}]" if enum else ""
-                        items = pdef.get("items", {})
-                        if items:
-                            tools_suffix += f"  - `{pname}` ({ptype}{extra}){req}"
-                            if pdesc:
-                                tools_suffix += f": {pdesc}"
-                            tools_suffix += "\n"
-                            # Show nested properties for array items
-                            iprops = items.get("properties", {})
-                            ireq = items.get("required", [])
-                            for ipn, ipd in iprops.items():
-                                ipt = ipd.get("type", "any")
-                                ir = " (required)" if ipn in ireq else ""
-                                tools_suffix += f"      - `{ipn}` ({ipt}){ir}\n"
-                        else:
-                            tools_suffix += f"  - `{pname}` ({ptype}{extra}){req}"
-                            if pdesc:
-                                tools_suffix += f": {pdesc}"
-                            tools_suffix += "\n"
+                        enum_str = f"[{'|'.join(str(e) for e in enum)}]" if enum else ""
+                        param_strs.append(f"{pname}{req}{enum_str}: {ptype}")
+            params_joined = ", ".join(param_strs)
+            tools_suffix += f"\n## {name}\n- **{name}**({params_joined}): {desc}\n"
         tools_suffix += """
 
 # Tool Call Format
@@ -4447,7 +4431,7 @@ def _chat_completions_impl(req: ChatRequest, raw_request: Request):
                     remaining = re.sub(r"<[^>]*>", "", remaining).strip()
                     if remaining:
                         yield _chunk({"content": remaining})
-                if "length limit" in err_str.lower() or "context_length" in err_str.lower() or "start a new chat" in err_str.lower() or "content is too long" in err_str.lower() or "input_exceeds_limit" in err_str.lower() or "too long" in err_str.lower():
+                if any(k in err_str.lower() for k in ("length limit", "context_length", "start a new chat", "content is too long", "input_exceeds_limit", "too long", "limit długości", "rozpocznij nowy czat")):
                     # Zamiast czyścić stan, rotujemy sesję DS automatycznie
                     print(f"[CONTEXT LIMIT] Rotating DS session for {conv_key[:24]}... (prompt was {len(prompt)} chars)", flush=True)
                     if state:
