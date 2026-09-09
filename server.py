@@ -1298,6 +1298,21 @@ def authenticate_via_playwright(ap: AccountPool, slot: int, clean_profile: bool 
 
 app = FastAPI(title="DeepSeek V4-Pro Proxy")
 
+@app.get("/")
+@app.get("/v1/info")
+def proxy_info(request: Request):
+    port = request.url.port or request.scope.get("server", [None, 4570])[1]
+    is_clean = (port == 4571)
+    return {
+        "status": "online",
+        "current_port": port,
+        "mode": "CZYSTY_PASSTHROUGH (zero promptu)" if is_clean else "KODOWANIE_DEV (z promptem)",
+        "guide": {
+            "4570": "KODOWANIE & DEV (dla Trae / Cursor / Cortex Chat - wstrzykuje instrukcje programisty)",
+            "4571": "CZYSTY PASSTHROUGH (dla Useme Core / botow / skryptow - zero wstrzykiwania, model dostaje czyste dane)"
+        }
+    }
+
 # â”€â”€ Lokalne ścieĹĽki danych (zamiast F:/PROJEKTY/...) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(SCRIPT_DIR, "data")
@@ -3381,6 +3396,11 @@ def chat_completions(req: ChatRequest, raw_request: Request):
 
 def _chat_completions_impl(req: ChatRequest, raw_request: Request):
     t0 = time.time()
+    try:
+        req_port = raw_request.url.port or raw_request.scope.get("server", [None, 4570])[1]
+    except Exception:
+        req_port = raw_request.scope.get("server", [None, 4570])[1] if hasattr(raw_request, "scope") and isinstance(raw_request.scope, dict) else 4570
+    is_clean_port = (req_port == 4571) or (raw_request.headers.get("x-proxy-clean") == "true")
     # Log raw request body to see EVERYTHING Trae sends
     body_bytes = raw_request._body or b""
     body_str = body_bytes.decode("utf-8", "ignore")
@@ -3835,7 +3855,9 @@ def _chat_completions_impl(req: ChatRequest, raw_request: Request):
                 except Exception as e:
                     print(f"[VISION] Failed to upload image {idx+1}: {e}", flush=True)
         # ── Prompt engineering: search/vision, clean mode, subagents, main agent ──
-        if clean_msgs and clean_msgs[0].get("role") == "system":
+        if is_clean_port:
+            print(f"[PORT 4571 - CLEAN PASSTHROUGH] Pure passthrough mode. Zero prompt injection. Request passed 1:1.", flush=True)
+        elif clean_msgs and clean_msgs[0].get("role") == "system":
             if search_enabled or is_vision:
                 _sv_prompt = _get_search_vision_prompt()
                 clean_msgs[0] = dict(clean_msgs[0], content=_sv_prompt)
@@ -3917,11 +3939,11 @@ def _chat_completions_impl(req: ChatRequest, raw_request: Request):
                 print(f"[MAIN] Mode={_mode} — prepended prompt (+{len(_prepend)} chars). Total: {len(clean_msgs[0]['content'])} chars", flush=True)
         # ── Persistent Goal Injection: wyciągnij cele ze wszystkich wiadomości użytkownika ──
         # Tryb czysty: bez wstrzykiwania <critical_directive> / ORIGINAL GOAL — czysty kontekst.
-        goals = extract_goals_from_messages(req.messages) if (not search_enabled and not is_vision and not _clean_mode_enabled()) else ""
+        goals = extract_goals_from_messages(req.messages) if (not search_enabled and not is_vision and not _clean_mode_enabled() and not is_clean_port) else ""
         # ── Semantic summary + proactive rotation warning (web chat only) ──
         conv_summary = ""
         rotation_warning = ""
-        if not is_subagent and not search_enabled and not is_vision:
+        if not is_subagent and not search_enabled and not is_vision and not is_clean_port:
             # For web chat, check if we need proactive rotation warning
             if state and state.get("msgs_len", 0) >= 45:
                 rotation_warning = get_rotation_warning(state["msgs_len"])
@@ -4646,5 +4668,27 @@ if __name__ == "__main__":
             _host = sys.argv[sys.argv.index("--host") + 1]
         except IndexError:
             pass
-    print(f"Starting on http://{_host}:{_port}")
-    uvicorn.run(app, host=_host, port=_port)
+
+    _clean_port = 4571
+    print("=================================================================", flush=True)
+    print("  DEEPSEEK DUAL-PORT PROXY WYSTARTOWAL POMYSLNIE:", flush=True)
+    print(f"  [1] http://{_host}:{_port}  -> KODOWANIE & DEV (Trae / Cursor / Cortex Chat)", flush=True)
+    print(f"  [2] http://{_host}:{_clean_port}  -> CZYSTY PASSTHROUGH (Useme Core / Boty / Raw)", flush=True)
+    print("=================================================================", flush=True)
+
+    if "--single-port" in sys.argv:
+        uvicorn.run(app, host=_host, port=_port)
+    else:
+        import asyncio
+
+        async def _run_dual():
+            cfg_main = uvicorn.Config(app, host=_host, port=_port, log_level="warning")
+            cfg_clean = uvicorn.Config(app, host=_host, port=_clean_port, log_level="warning")
+            srv_main = uvicorn.Server(cfg_main)
+            srv_clean = uvicorn.Server(cfg_clean)
+            await asyncio.gather(srv_main.serve(), srv_clean.serve())
+
+        try:
+            asyncio.run(_run_dual())
+        except (KeyboardInterrupt, SystemExit):
+            pass

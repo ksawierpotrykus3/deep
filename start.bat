@@ -5,13 +5,17 @@ title DeepSeek Proxy
 
 :menu
 cls
-echo ============================================
-echo     DEEPSEEK PROXY - WYBOR TRYBU STARTU
-echo ============================================
+echo ================================================================
+echo        DEEPSEEK DUAL-PORT PROXY - WYBOR TRYBU
+echo ================================================================
 echo.
-echo   [1] NORMALNY  - Twoj obecny tryb
-echo   [2] CZYSTY    - wlasny prompt (prompt2.txt)
+echo   [1] STANDARD DUAL (Zalecany):
+echo       - Port 4570: KODOWANIE (Trae / Cursor / Cortex)
+echo       - Port 4571: CZYSTY PASSTHROUGH (Useme Core / Boty)
 echo.
+echo   [2] CZYSTY PROMPT2 (z pliku prompt2.txt na 4570)
+echo.
+echo ================================================================
 choice /c 12 /n /m "Wybierz (1-2): "
 if errorlevel 2 goto clean
 if errorlevel 1 goto normal
@@ -25,14 +29,12 @@ set PROXY_ARGS=--clean
 goto run
 
 :run
-echo [*] Ubijanie starego procesu na porcie 4570...
+echo [*] Ubijanie starych procesow na portach 4570 i 4571...
 for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":4570" ^| findstr "LISTENING"') do (
     taskkill /F /PID %%a >nul 2>&1
-    if errorlevel 1 (
-        echo     ! Nie moge zabic PID %%a - brak uprawnien. Uruchom jako Administrator.
-    ) else (
-        echo     Zabito PID %%a
-    )
+)
+for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":4571" ^| findstr "LISTENING"') do (
+    taskkill /F /PID %%a >nul 2>&1
 )
 
 echo [*] Czyszczenie __pycache__...
