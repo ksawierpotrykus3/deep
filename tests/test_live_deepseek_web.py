@@ -125,18 +125,75 @@ def test_live_parallel_multi_tool_calling(trae_10_tools_schemas):
     assert stream_res is not None
     
     gen, meta = stream_res
-    raw_chunks = []
+    content_chunks = []
+    reasoning_chunks = []
     for tok in gen:
-        if tok:
-            raw_chunks.append(tok)
+        if isinstance(tok, server._ReasoningChunk):
+            if tok.text:
+                reasoning_chunks.append(tok.text)
+        elif tok:
+            content_chunks.append(str(tok))
             
     total_time = time.perf_counter() - t0
-    full_output = "".join(raw_chunks)
+    full_output = "".join(content_chunks)
     
     parsed_tools = server._parse_tool_calls(full_output)
-    print(f"\n[LIVE PARALLEL TOOLS] Model wygenerował {len(parsed_tools)} narzędzi w {total_time:.2f}s:")
+    print(f"\n[LIVE PARALLEL TOOLS] Model wygenerował {len(parsed_tools)} narzędzi w {total_time:.2f}s (reasoning chars: {len(''.join(reasoning_chunks))}):")
     for pt in parsed_tools:
         print(f"  -> Tool: {pt[2]}, Args: {pt[3]}")
         
     assert len(parsed_tools) >= 2, f"Expected at least 2 parallel tool calls, got {len(parsed_tools)}: {full_output!r}"
     assert "KONTYNUUJ" not in full_output, "Auto-continue leaked into tool call generation!"
+
+
+@pytest.mark.live
+def test_live_unified_model_vision_with_reasoning():
+    """Weryfikuje, że nowy zunifikowany model DeepSeek obsługuje obrazy oraz głębokie myślenie (R1) jednocześnie."""
+    import io
+    from PIL import Image
+
+    ap = server.AccountPool()
+    valid_slots = [i for i in range(server.MAX_ACCOUNTS) if ap.is_valid(i)]
+    assert len(valid_slots) > 0, "No active accounts in AccountPool!"
+    slot = valid_slots[0]
+    ds = server.DeepSeek(ap)
+
+    # Generujemy w pamięci mały obrazek testowy (czerwony kwadrat)
+    img = Image.new("RGB", (10, 10), color="red")
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    img_bytes = buf.getvalue()
+
+    t0 = time.perf_counter()
+    file_id = ds.upload_file(slot, img_bytes, "test_red_unified.png")
+    assert file_id and len(file_id) > 5
+
+    session_id = ds.create_session(slot)
+    assert session_id and len(session_id) > 5
+
+    prompt = "Jaki to kolor na obrazku? Wytłumacz i podaj odpowiedź."
+    stream_res = ds.stream_completion(
+        slot, session_id, prompt, model_type="default",
+        ref_file_ids=[file_id], thinking_enabled=True,
+    )
+    assert stream_res is not None
+
+    gen, meta = stream_res
+    reasoning = []
+    content = []
+    for tok in gen:
+        if isinstance(tok, server._ReasoningChunk):
+            if tok.text:
+                reasoning.append(tok.text)
+        elif tok:
+            content.append(str(tok))
+
+    total_time = time.perf_counter() - t0
+    full_reasoning = "".join(reasoning)
+    full_content = "".join(content)
+
+    print(f"\n[LIVE UNIFIED VISION+THINKING] Czas: {total_time:.2f}s, Reasoning: {len(full_reasoning)} znaków, Odpowiedź: {full_content.strip()!r}")
+    assert len(full_reasoning) > 0, "Model nie wygenerował fazy myślenia dla obrazka!"
+    assert len(full_content) > 0, "Model nie wygenerował właściwej odpowiedzi!"
+    assert any(w in full_content.lower() for w in ("czerwon", "red")), f"Model nie rozpoznał koloru: {full_content}"
+

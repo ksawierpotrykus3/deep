@@ -39,19 +39,19 @@ PROMPT3_FILE = Path(__file__).parent / "prompt3.txt"
 
 # ==============================================================================
 #                     USTAWIENIA TRYBÓW PROXY (DLA UŻYTKOWNIKA)
-#  Tutaj możesz zmienić True / False dla domyślnego zachowania proxy:
 # ==============================================================================
+# Głębokie myślenie (DeepThink / R1) i Wyszukiwanie (Search) dla nowego,
+# zunifikowanego modelu DeepSeek (łączącego Szybki, Ekspert i Wizja w jeden silnik).
+DEFAULT_THINKING  = True    # True = włącz głębokie myślenie [⚛️] (zalecane do kodowania/architektury)
+DEFAULT_SEARCH    = False   # True = włącz wyszukiwanie w necie [🌐], False = wyłącz
+VISION_THINKING   = True    # True = myślenie przy analizie obrazów [🖼️], False = szybka analiza
 
-# --- 1. TRYB SZYBKI [⚡ Szybki] (DeepSeek-V4-Flash) ---
-SZYBKI_MYSLEKIE   = True    # True = włącz głębokie myślenie [⚛️], False = szybka odpowiedź bez myślenia
-SZYBKI_SZUKANIE   = False   # True = włącz wyszukiwanie w necie [🌐], False = wyłącz
-
-# --- 2. TRYB EKSPERT [💎 Ekspert] (DeepSeek-V4-Pro) ---
-EKSPERT_MYSLEKIE  = True    # True = włącz głębokie myślenie [⚛️] (zalecane do kodowania)
-EKSPERT_SZUKANIE  = False   # True = włącz wyszukiwanie w necie, False = wyłącz
-
-# --- 3. TRYB WIZJA [🖼️ Wizja] (DeepSeek-Vision) ---
-WIZJA_MYSLEKIE    = False   # True = myślenie przy analizie obrazów, False = szybka analiza
+# Zachowanie pełnej zgodności wstecznej dla starszych skryptów i wywołań:
+SZYBKI_MYSLEKIE   = DEFAULT_THINKING
+SZYBKI_SZUKANIE   = DEFAULT_SEARCH
+EKSPERT_MYSLEKIE  = DEFAULT_THINKING
+EKSPERT_SZUKANIE  = DEFAULT_SEARCH
+WIZJA_MYSLEKIE    = VISION_THINKING
 # ==============================================================================
 
 
@@ -111,9 +111,22 @@ class Session:
     last_validated_at: float = 0.0
 
 
+
+_slot_locks = [threading.Lock() for _ in range(MAX_ACCOUNTS)]
+_slot_in_progress = [False] * MAX_ACCOUNTS
+_slot_busy = [False] * MAX_ACCOUNTS
+_slot_busy_lock = threading.RLock()
+_conv_lock = threading.Lock()
+_rate_limited_until: list[float] = [0.0] * MAX_ACCOUNTS
+
+
 class AccountPool:
     def __init__(self):
         self.slots: list[Session | None] = [None] * MAX_ACCOUNTS
+        self._rr_index = 0
+        self._pool_lock = _slot_busy_lock
+        self._slot_conditions = [threading.Condition(self._pool_lock) for _ in range(MAX_ACCOUNTS)]
+        self._any_free_cond = threading.Condition(self._pool_lock)
         self._migrate_old_session()
         self._load_all()
 
@@ -167,32 +180,94 @@ class AccountPool:
         return None
 
     def pick_for_conv(self, conv_key: str | None = None, is_subagent: bool = False) -> int:
-        """Pick least-loaded account for a new conversation, prioritizing non-busy slots."""
+        """Wybiera wolny slot wg Round-Robin, omijając sloty zajęte i rate-limited (bez rezerwacji)."""
         now = time.time()
-        counts = [0] * MAX_ACCOUNTS
-        with _conv_lock:
-            for v in _conv_state.values():
-                a = v.get("account", -1)
-                if 0 <= a < MAX_ACCOUNTS:
-                    counts[a] += 1
-        valid = [i for i in range(MAX_ACCOUNTS) if self.is_valid(i) and now >= _rate_limited_until[i]]
-        if not valid:
-            valid = [i for i in range(MAX_ACCOUNTS) if self.is_valid(i)]
-        if not valid:
-            valid = [i for i in range(MAX_ACCOUNTS) if self.slots[i] is not None]
-        if not valid:
-            valid = list(range(MAX_ACCOUNTS))
+        with self._pool_lock:
+            valid = [i for i in range(MAX_ACCOUNTS) if self.is_valid(i) and now >= _rate_limited_until[i]]
+            if not valid:
+                valid = [i for i in range(MAX_ACCOUNTS) if self.is_valid(i)]
+            if not valid:
+                valid = [i for i in range(MAX_ACCOUNTS) if self.slots[i] is not None]
+            if not valid:
+                valid = list(range(MAX_ACCOUNTS))
 
-        # Priorytet dla slotów, które NIE są aktualnie zajęte strumieniowaniem
-        try:
-            with _slot_busy_lock:
+            free_valid = [i for i in valid if not _slot_busy[i]]
+            candidates = free_valid if free_valid else valid
+
+            for step in range(MAX_ACCOUNTS):
+                cand = (self._rr_index + step) % MAX_ACCOUNTS
+                if cand in candidates:
+                    self._rr_index = (cand + 1) % MAX_ACCOUNTS
+                    return cand
+
+            chosen = candidates[0]
+            self._rr_index = (chosen + 1) % MAX_ACCOUNTS
+            return chosen
+
+    def acquire_slot(self, preferred_slot: int | None = None, timeout: float = 60.0) -> int:
+        """
+        Atomowo rezerwuje slot dla zapytania (ustawia _slot_busy = True).
+        - Jeśli preferred_slot jest podany i sprawny: czeka w kolejce na ten slot.
+        - Jeśli brak preferencji lub preferred_slot jest rate-limited/zajęty po upływie limitu:
+          bierze wolny slot Round-Robin lub czeka na zwolnienie dowolnego slotu.
+        """
+        deadline = time.time() + timeout
+        with self._pool_lock:
+            # 1. Preferowany slot (kontynuacja trwającej rozmowy na danym koncie)
+            if preferred_slot is not None and 0 <= preferred_slot < MAX_ACCOUNTS and self.is_valid(preferred_slot):
+                now = time.time()
+                if now >= _rate_limited_until[preferred_slot]:
+                    while _slot_busy[preferred_slot]:
+                        remaining = deadline - time.time()
+                        if remaining <= 0:
+                            print(f"[SLOT-QUEUE] Timeout ({timeout}s) waiting for preferred slot {preferred_slot}, falling back to free slot", flush=True)
+                            break
+                        self._slot_conditions[preferred_slot].wait(timeout=min(remaining, 1.0))
+                    if not _slot_busy[preferred_slot]:
+                        _slot_busy[preferred_slot] = True
+                        return preferred_slot
+
+            # 2. Szukanie wolnego slotu Round-Robin z kolejkowaniem
+            while True:
+                now = time.time()
+                valid = [i for i in range(MAX_ACCOUNTS) if self.is_valid(i) and now >= _rate_limited_until[i]]
+                if not valid:
+                    valid = [i for i in range(MAX_ACCOUNTS) if self.is_valid(i)]
+                if not valid:
+                    raise HTTPException(503, "Brak zalogowanych kont DeepSeek.")
+
                 free_valid = [i for i in valid if not _slot_busy[i]]
-        except Exception:
-            free_valid = []
+                if free_valid:
+                    chosen = None
+                    for step in range(MAX_ACCOUNTS):
+                        cand = (self._rr_index + step) % MAX_ACCOUNTS
+                        if cand in free_valid:
+                            chosen = cand
+                            self._rr_index = (cand + 1) % MAX_ACCOUNTS
+                            break
+                    if chosen is None:
+                        chosen = free_valid[0]
+                        self._rr_index = (chosen + 1) % MAX_ACCOUNTS
 
-        if free_valid:
-            return min(free_valid, key=lambda i: counts[i])
-        return min(valid, key=lambda i: counts[i])
+                    _slot_busy[chosen] = True
+                    return chosen
+
+                # Wszystkie sprawne sloty są zajęte — kolejkowanie żądania
+                remaining = deadline - time.time()
+                if remaining <= 0:
+                    raise HTTPException(503, f"Wszystkie sloty ({len(valid)}) są zajęte generowaniem. Upłynął limit czasu oczekiwania.")
+                print(f"[SLOT-QUEUE] All {len(valid)} active slots busy. Waiting for free slot ({remaining:.1f}s left)...", flush=True)
+                self._any_free_cond.wait(timeout=min(remaining, 1.0))
+
+    def release_slot(self, slot_idx: int):
+        """Zwalnia slot i natychmiast wybudza oczekujące żądania z kolejki."""
+        with self._pool_lock:
+            if 0 <= slot_idx < MAX_ACCOUNTS:
+                if _slot_busy[slot_idx]:
+                    _slot_busy[slot_idx] = False
+                    self._slot_conditions[slot_idx].notify_all()
+                    self._any_free_cond.notify()
+
 
     def reset_slot(self, idx: int):
         self.slots[idx] = None
@@ -1063,9 +1138,16 @@ class DeepSeek:
                 _auto_continue_budget -= 1
                 auto_continue_count += 1
                 print(f"[AUTO-CONTINUE] Truncated tool call detected, attempt {auto_continue_count}, budget left={_auto_continue_budget}, parent={resp_msg_id} (content={len(content_buffer)} chars)", flush=True)
+                cont_prompt = "kontynuuj"
+                if has_unclosed_tools:
+                    cont_prompt = (
+                        "kontynuuj. Uwaga: zauważyliśmy problem z przebiegiem zadania (urwany tag narzędzia lub możliwe zapętlenie). "
+                        "Ogarnij się: przeanalizuj krytycznie gdzie jesteś i doprowadź zadanie do końca — "
+                        "albo wykonując jedno w 100% poprawne zapytanie narzędziowe, albo przedstawiając gotowy, finalny raport w Markdownie."
+                    )
                 try:
                     cont_res = self.stream_completion(
-                        account_idx, chat_session_id, "kontynuuj", resp_msg_id,
+                        account_idx, chat_session_id, cont_prompt, resp_msg_id,
                         max_tokens=max_tokens, temperature=temperature, top_p=top_p,
                         model_type=model_type, ref_file_ids=ref_file_ids,
                         thinking_enabled=thinking_enabled, search_enabled=search_enabled,
@@ -2678,18 +2760,12 @@ class ChatRequest(BaseModel):
 
 
 
-_slot_locks = [threading.Lock() for _ in range(MAX_ACCOUNTS)]
-_slot_in_progress = [False] * MAX_ACCOUNTS
-_slot_busy = [False] * MAX_ACCOUNTS
-_slot_busy_lock = threading.Lock()
-
 # ── Bramka limitu równoległości (#2): ile żądań może jednocześnie przechodzić
 # przez fazę budowy promptu + wywołania DeepSeek (blokujący requests.post + preambuła).
 # Streaming po przejściu bramki działa równolegle — bramka ogranicza burst upstream.
-_MAX_PARALLEL = int(os.environ.get("MAX_PARALLEL_STREAMS", "6"))
+_MAX_PARALLEL = int(os.environ.get("MAX_PARALLEL_STREAMS", "8"))
 _parallel_gate = threading.BoundedSemaphore(_MAX_PARALLEL)
-_conv_lock = threading.Lock()
-_rate_limited_until: list[float] = [0.0] * MAX_ACCOUNTS
+
 
 def _ensure_slot(slot: int, clean: bool = False):
     global _slot_in_progress
@@ -2719,55 +2795,38 @@ def _ensure_slot(slot: int, clean: bool = False):
 
 @app.get("/v1/models")
 def list_models():
+    now_ts = 1745452800
+    model_ids = [
+        # Standardowe modele DeepSeek / OpenAI (nowy standard zunifikowanego silnika)
+        "deepseek-chat",
+        "deepseek-reasoner",
+        "deepseek-coder",
+        "deepseek-v3",
+        "deepseek-r1",
+        "deepseek-vision",
+        # Warianty funkcyjne
+        "deepseek-chat-search",
+        "deepseek-chat-nothink",
+        # Aliasty kompatybilności wstecznej (dla istniejących konfiguracji Trae / Cortex / Cursor)
+        "deepseek-v4-pro",
+        "deepseek-v4-flash",
+        "deepseek-v4-flash-search",
+        "deepseek-v4-flash-nothink",
+        "deepseek-fast",
+        "deepseek-fast-search",
+        "deepseek-fast-nothink",
+        "deepseek-expert",
+    ]
     return {
         "object": "list",
         "data": [{
-            "id": "deepseek-v4-pro",
+            "id": mid,
             "object": "model",
-            "created": 1745452800,
+            "created": now_ts,
             "owned_by": "deepseek",
-        }, {
-            "id": "deepseek-v4-flash",
-            "object": "model",
-            "created": 1745452800,
-            "owned_by": "deepseek",
-        }, {
-            "id": "deepseek-v4-flash-search",
-            "object": "model",
-            "created": 1745452800,
-            "owned_by": "deepseek",
-        }, {
-            "id": "deepseek-v4-flash-nothink",
-            "object": "model",
-            "created": 1745452800,
-            "owned_by": "deepseek",
-        }, {
-            "id": "deepseek-vision",
-            "object": "model",
-            "created": 1745452800,
-            "owned_by": "deepseek",
-        }, {
-            "id": "deepseek-fast",
-            "object": "model",
-            "created": 1745452800,
-            "owned_by": "deepseek",
-        }, {
-            "id": "deepseek-fast-search",
-            "object": "model",
-            "created": 1745452800,
-            "owned_by": "deepseek",
-        }, {
-            "id": "deepseek-fast-nothink",
-            "object": "model",
-            "created": 1745452800,
-            "owned_by": "deepseek",
-        }, {
-            "id": "deepseek-expert",
-            "object": "model",
-            "created": 1745452800,
-            "owned_by": "deepseek",
-        }]
+        } for mid in model_ids]
     }
+
 
 
 @app.post("/v1/login")
@@ -2828,10 +2887,23 @@ def _save_conv_state():
             for k in sorted_keys[MAX_CONV_ENTRIES:]:
                 del _conv_state[k]
             print(f"[CONV] Pruned {len(sorted_keys) - MAX_CONV_ENTRIES} old entries, keeping {len(_conv_state)}", flush=True)
+        # OPTIMIZATION: Do not persist full tool schemas and truncate huge user prompts in disk state
+        clean_state = {}
+        for k, v in _conv_state.items():
+            if isinstance(v, dict):
+                item = dict(v)
+                item.pop("tools", None)
+                if "first_user_prompt" in item and isinstance(item["first_user_prompt"], str):
+                    if len(item["first_user_prompt"]) > 256:
+                        item["first_user_prompt"] = item["first_user_prompt"][:256]
+                clean_state[k] = item
+            else:
+                clean_state[k] = v
+
         tmp = CONV_STATE_FILE.with_suffix(".tmp")
         # Explicit UTF-8 open to avoid Windows cp1250 encoding bug with -> (U+2192)
         with open(str(tmp), "w", encoding="utf-8") as f:
-            json.dump(_conv_state, f, indent=2, ensure_ascii=False)
+            json.dump(clean_state, f, indent=2, ensure_ascii=False)
         tmp.replace(CONV_STATE_FILE)
     except Exception as e:
         print(f"[CONV SAVE ERROR] {e}", flush=True)
@@ -3516,44 +3588,34 @@ def _chat_completions_impl(req: ChatRequest, raw_request: Request):
 
     # Detect model type and configuration from requested model name or default config
     req_model_lower = (req.model or "").lower()
-    is_vision = "vision" in req_model_lower
-    image_files = []
-    if is_vision:
-        image_files = _extract_images(req.messages)
+    image_files = _extract_images(req.messages)
+    is_vision = bool(image_files) or ("vision" in req_model_lower)
+    if image_files:
         print(f"[VISION] Found {len(image_files)} image(s) in request", flush=True)
 
-    # Rozpoznanie profilu (Szybki / Ekspert / Wizja / Subagent)
-    if is_vision:
-        model_type = "vision"
-        thinking_enabled = WIZJA_MYSLEKIE or ("think" in req_model_lower)
-        search_enabled = False
-    elif is_subagent:
-        # SUBAGENT: profil Expert (model_type='expert'). Myślenie zostaje WŁĄCZONE
-        # (jak użytkownik zawsze miał) — problem nie leży w samym myśleniu, tylko w tym,
-        # że proxy nie oddziela CoT (thinking) od odpowiedzi. To naprawiamy w parserze
-        # strumienia, a nie przez wyłączanie myślenia.
-        model_type = "expert"
-        thinking_enabled = EKSPERT_MYSLEKIE
-        search_enabled = EKSPERT_SZUKANIE or ("search" in req_model_lower)
-        print(f"[SUBAGENT] Expert profile (model_type='expert', thinking={thinking_enabled}, search={search_enabled})", flush=True)
-    elif "fast" in req_model_lower or "flash" in req_model_lower:
-        # Pełne usunięcie profilu Flash: modele "fast/flash" traktowane jak Expert
-        model_type = "expert"
-        if "nothink" in req_model_lower or "no_think" in req_model_lower:
-            thinking_enabled = False
-        else:
-            thinking_enabled = EKSPERT_MYSLEKIE
-        search_enabled = "search" in req_model_lower or EKSPERT_SZUKANIE
+    # Rozpoznanie profilu zunifikowanego modelu DeepSeek:
+    # 1. Flaga thinking (Głębokie myślenie / R1 / CoT):
+    if any(k in req_model_lower for k in ("nothink", "no_think", "no-think", "fast-nothink", "flash-nothink")):
+        thinking_enabled = False
+    elif any(k in req_model_lower for k in ("reasoner", "r1", "think", "expert", "pro")):
+        thinking_enabled = True
+    elif is_vision:
+        thinking_enabled = VISION_THINKING or ("think" in req_model_lower)
     else:
-        # Domyślnie tryb Ekspert (deepseek-v4-pro / deepseek-expert)
-        model_type = "expert"
-        if "nothink" in req_model_lower or "no_think" in req_model_lower:
-            thinking_enabled = False
-        else:
-            thinking_enabled = EKSPERT_MYSLEKIE
-        search_enabled = "search" in req_model_lower or EKSPERT_SZUKANIE
+        thinking_enabled = DEFAULT_THINKING
 
-    print(f"[ROUTER] Model '{req.model}' -> model_type='{model_type}', thinking={thinking_enabled}, search={search_enabled}", flush=True)
+    # 2. Flaga search (Przeszukiwanie internetu):
+    if "search" in req_model_lower:
+        search_enabled = True
+    elif "no-search" in req_model_lower or "nosearch" in req_model_lower:
+        search_enabled = False
+    else:
+        search_enabled = DEFAULT_SEARCH
+
+    # model_type dla API DeepSeek Web: 'default' to oficjalny zunifikowany silnik
+    model_type = "default"
+
+    print(f"[ROUTER] Model '{req.model}' -> model_type='{model_type}', thinking={thinking_enabled}, search={search_enabled}, vision={is_vision}", flush=True)
 
     # Disable Trae XML tools for search and vision to allow native DeepSeek operation
     if search_enabled or is_vision:
@@ -3614,41 +3676,29 @@ def _chat_completions_impl(req: ChatRequest, raw_request: Request):
         resume = False
     ref_file_ids = []
 
-    # Pick account for this conversation
+    # Pick and atomically acquire account for this conversation (Mutual Exclusion & Zero TOCTOU)
+    preferred_idx = None
     if state and "account" in state:
-        account_idx = state["account"]
+        saved_acc = state["account"]
         now_req = time.time()
         # BUG-026: Jeśli zapisane konto w sesji jest aktualnie zablokowane rate-limitem,
-        # natychmiast rotuj na wolne, czyste konto zamiast wchodzić w błąd 429 / 73s freeze!
-        if now_req < _rate_limited_until[account_idx]:
-            free_acc = ap.pick_for_conv(conv_key, is_subagent=is_subagent)
-            if free_acc != account_idx and now_req >= _rate_limited_until[free_acc]:
-                print(f"[RATE-LIMIT] Account {account_idx} currently rate-limited (for {_rate_limited_until[account_idx]-now_req:.1f}s) -> migrating conv {conv_key[:20]} to clean account {free_acc}", flush=True)
-                account_idx = free_acc
-        elif is_subagent:
-            with _slot_busy_lock:
-                is_curr_busy = _slot_busy[account_idx]
-            if is_curr_busy:
-                free_acc = ap.pick_for_conv(conv_key, is_subagent=True)
-                if free_acc != account_idx:
-                    print(f"[SUBAGENT] Slot {account_idx} busy -> reassigning to free slot {free_acc}", flush=True)
-                    account_idx = free_acc
-    else:
-        account_idx = ap.pick_for_conv(conv_key, is_subagent=is_subagent)
-    # Fall back to valid slot if selected one is invalid
-    if not ap.is_valid(account_idx):
-        valid = [i for i in range(MAX_ACCOUNTS) if ap.is_valid(i)]
-        if valid:
-            account_idx = valid[0]
-            print(f"[ACCOUNT] fallback to valid slot {account_idx}", flush=True)
+        # natychmiast rotuj na wolny, czysty slot!
+        if now_req < _rate_limited_until[saved_acc]:
+            print(f"[RATE-LIMIT] Account {saved_acc} currently rate-limited (for {_rate_limited_until[saved_acc]-now_req:.1f}s) -> migrating conv {conv_key[:20]} to clean account", flush=True)
+            preferred_idx = None
         else:
-            # Bez zalogowanych kont NIE otwieramy Chrome automatycznie.
-            # Zwracamy czytelny blad z instrukcja - klient musi uruchomic login_slot.bat 0
-            raise HTTPException(503,
-                "Brak zalogowanych kont DeepSeek. Otworz DRUGIE okno CMD w tym folderze "
-                "i uruchom: login_slot.bat 0   (zaloguj sie, potem zamknij przegladarke) "
-                "i powtorz zapytanie.")
-    print(f"[ACCOUNT] conv_key={conv_key[:24]}... account_idx={account_idx}", flush=True)
+            preferred_idx = saved_acc
+
+    account_idx = ap.acquire_slot(preferred_slot=preferred_idx, timeout=60.0)
+    slot_released = False
+
+    def _release_slot_safe():
+        nonlocal slot_released
+        if not slot_released:
+            slot_released = True
+            ap.release_slot(account_idx)
+
+    print(f"[ACCOUNT] conv_key={conv_key[:24]}... acquired account_idx={account_idx} (preferred={preferred_idx})", flush=True)
 
     # CRITICAL: Jeśli konto uległo zmianie względem zapisanego stanu,
     # stary ds_session NIE ISTNIEJE na nowym koncie! Wymuszamy nową sesję.
@@ -3702,6 +3752,7 @@ def _chat_completions_impl(req: ChatRequest, raw_request: Request):
         use_official_api = (not is_subagent and not is_vision and official_api.available)
     
     if use_official_api:
+        _release_slot_safe()
         print(f"[HYBRID] Main agent detected ({len(req.messages)} msgs) -> routing to official API (mode={proxy_mode})", flush=True)
         return _handle_official_api_chat(
             req, conv_key, watermark_uuid, state, tools, sys_hash,
@@ -3764,6 +3815,20 @@ def _chat_completions_impl(req: ChatRequest, raw_request: Request):
                 new_msgs = [m for m in req.messages[-1:] if m.get("role") != "system"]
             print(f"[RESUME] Trae trimmed ({len(req.messages)} < {state['msgs_len']}) — continue same session, last msg only", flush=True)
             prompt = _build_prompt(new_msgs, tools=None, state=state)
+
+        # ── Universal Meta-Awareness Nudge (Dla subagenta / Flash / pętli narzędzi) ──
+        # Jeśli subagent wykonuje wiele operacji narzędziowych (>= 8) lub po zapętleniu:
+        # uświadamiamy model prostym bodźcem metakognitywnym, dając mu impuls do ogarnięcia się.
+        tool_turns = sum(1 for m in req.messages if m.get("role") == "tool" or "<tool_result" in str(m.get("content", "")))
+        if is_subagent and (tool_turns >= 8 or (state and state.get("loop_aborted"))):
+            meta_nudge = (
+                "\n\n[SYSTEM]:\n"
+                "Zauważyliśmy problem z przebiegiem tego zadania (możliwe zapętlenie w narzędziach, utrata głównego wątku lub błąd protokołu).\n"
+                "Twoim zadaniem jest się teraz ogarnąć: wróć myślami do pierwszego zlecenia, przeanalizuj krytycznie swój dotychczasowy postęp i doprowadź zadanie do końca — "
+                "albo wykonując jedno konkretne, w 100% poprawne zapytanie narzędziowe, albo przedstawiając gotowy, finalny raport w Markdownie."
+            )
+            prompt += meta_nudge
+            print(f"[META-NUDGE] Injected universal awareness nudge for subagent (tool_turns={tool_turns}, loop_aborted={state.get('loop_aborted') if state else False})", flush=True)
     if not resume and not resume_did_full_prompt:
         if state:
             print(f"[NEW TURN] conv_key={conv_key[:24]}... old_msgs={state['msgs_len']} cur_msgs={len(req.messages)}", flush=True)
@@ -4039,6 +4104,7 @@ def _chat_completions_impl(req: ChatRequest, raw_request: Request):
                     with _conv_lock:
                         _conv_state.pop(conv_key, None)
                         _save_conv_state()
+                    _release_slot_safe()
                     return _handle_official_api_chat(
                         req, conv_key, watermark_uuid, None, tools, sys_hash,
                         is_subagent, t0
@@ -4064,6 +4130,7 @@ def _chat_completions_impl(req: ChatRequest, raw_request: Request):
                 migrated = True  # block further migration attempts
                 continue  # retry the attempt loop
             if not ENABLE_ACCOUNT_MIGRATION or migrated or ("busy after" not in err_str and "rate_limit" not in err_str.lower()):
+                _release_slot_safe()
                 print(f"[ERROR] stream_completion failed: {e}", flush=True)
                 raise HTTPException(502, f"Upstream error: {e}")
             print(f"[MIGRATE] Account {account_idx} exhausted, looking for alternative...", flush=True)
@@ -4072,13 +4139,16 @@ def _chat_completions_impl(req: ChatRequest, raw_request: Request):
             if not alt:
                 alt = [i for i in range(MAX_ACCOUNTS) if i != account_idx and ap.is_valid(i)]
             if not alt:
+                _release_slot_safe()
                 print(f"[MIGRATE] No alternative account available, giving up", flush=True)
                 raise HTTPException(502, f"Upstream error: {e}")
             new_idx = ap.pick_for_conv(conv_key)
             if new_idx == account_idx:
                 new_idx = alt[0]
             print(f"[MIGRATE] Moving conv {conv_key[:24]}... from account {account_idx} to {new_idx}", flush=True)
-            account_idx = new_idx
+            _release_slot_safe()
+            account_idx = ap.acquire_slot(preferred_slot=new_idx, timeout=30.0)
+            slot_released = False
             _ensure_slot(account_idx)
             chat_id, account_idx = ds.create_session_with_fallback(account_idx)
             parent_id = None
@@ -4128,10 +4198,12 @@ def _chat_completions_impl(req: ChatRequest, raw_request: Request):
             print(f"[MIGRATE] New session on account {new_idx}: {chat_id}, retrying ({len(prompt)} chars)", flush=True)
             migrated = True
     if result is None:
+        _release_slot_safe()
         ap.reset_slot(account_idx)
         raise HTTPException(401, f"Account {account_idx} session expired. Use POST /v1/login?slot={account_idx}")
 
     if not isinstance(result, tuple) or len(result) != 2:
+        _release_slot_safe()
         print(f"[ERROR] stream_completion returned: {type(result).__name__} {repr(result)[:200]}", flush=True)
         raise HTTPException(502, "Upstream error")
 
@@ -4143,17 +4215,15 @@ def _chat_completions_impl(req: ChatRequest, raw_request: Request):
 
     if not req.stream:
         full_text = ""
-        with _slot_busy_lock:
-            _slot_busy[account_idx] = True
         try:
             for chunk in stream:
                 if chunk and chunk is not _HEARTBEAT_SENTINEL and isinstance(chunk, str):
                     full_text += chunk
         except Exception as e:
+            _release_slot_safe()
             raise HTTPException(502, f"Upstream error: {str(e)}")
         finally:
-            with _slot_busy_lock:
-                _slot_busy[account_idx] = False
+            _release_slot_safe()
         tools = _parse_tool_calls(full_text)
         clean_text = full_text
         if tools:
@@ -4218,8 +4288,6 @@ def _chat_completions_impl(req: ChatRequest, raw_request: Request):
         return f"data: {json.dumps(c)}\n\n"
 
     def generate():
-        with _slot_busy_lock:
-            _slot_busy[account_idx] = True
         try:
             full = ""
             sent_until = 0
@@ -4537,8 +4605,7 @@ def _chat_completions_impl(req: ChatRequest, raw_request: Request):
                 return
         finally:
             monitor.finish(watermark_uuid, ok=True)
-            with _slot_busy_lock:
-                _slot_busy[account_idx] = False
+            _release_slot_safe()
 
     return StreamingResponse(generate(), media_type="text/event-stream", headers={
         "Cache-Control": "no-cache",
