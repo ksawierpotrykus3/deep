@@ -1,0 +1,8 @@
+{
+  "_comment": "Lista kont DeepSeek uzywanych przez proxy. Uzupelnij wlasnymi danymi.",
+  "default_password": "YOUR_PASSWORD_HERE",
+  "accounts": [
+    { "slot": 0, "email": "account1@example.com", "password": "YOUR_PASSWORD_HERE" },
+    { "slot": 1, "email": "account2@example.com", "password": "YOUR_PASSWORD_HERE" }
+  ]
+}

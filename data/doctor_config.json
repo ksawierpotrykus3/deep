@@ -1,0 +1,25 @@
+{
+  "_comment": "Konfiguracja Doktora (Self-Healing Supervisor). Mozesz podac dowolny model i endpoint OpenAI-compatible (np. Gemini proxy na localhost, Claude, inny port, lub oficjalny DeepSeek).",
+  "enabled": false,
+  "provider": "custom_http",
+  "endpoint": "",
+  "model": "deepseek-chat",
+  "api_key": "",
+  "timeout_seconds": 25.0,
+  "trigger_on": {
+    "unclosed_tool_call": true,
+    "auto_continue_failed": true,
+    "loop_aborted_without_tool": true,
+    "stream_zero_tokens": true,
+    "unexpected_error": true
+  },
+  "ignored_errors": [
+    "timeout",
+    "readtimeout",
+    "connecttimeout",
+    "pacing",
+    "rate_limit",
+    "client disconnected",
+    "generatorexit"
+  ]
+}
