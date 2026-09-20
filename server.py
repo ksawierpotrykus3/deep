@@ -26,8 +26,13 @@ import monitor
 import doctor
 from cloud_shield import cloud_shield
 from fastapi import FastAPI, HTTPException, Request, Body
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from document_attachment_service import (
+    extract_oversized_blocks_to_attachments,
+    sanitize_system_tokens,
+    PROMPT_ATTACHMENT_THRESHOLD,
+)
 from pydantic import BaseModel
 import uvicorn
 
@@ -2894,7 +2899,14 @@ def _build_prompt(messages: list[dict], tools: list[dict] | None = None, images:
 <tool_call name="ToolName">
   <parameter name="file_path">c:/path/to/file</parameter>
   <parameter name="content">file content here</parameter>
-</tool_call>"""
+</tool_call>
+
+<system-reminder>
+CRITICAL AGENTIC RULE:
+Każda twoja tura (dopóki zadanie nie jest w 100% ukończone i nie rozpoczyna się od 'FINAL ANSWER:') MUSI zawierać wywołanie narzędzia w bloku <tool_call>!
+NIGDY nie pisz samego tekstu z zapowiedzią lub komentarzem (np. 'Znalazłem...', 'Sprawdzam plik...', 'I will now check...').
+Jeśli wiesz co zrobić — natychmiast wywołaj narzędzie w tej samej odpowiedzi.
+</system-reminder>"""
 
     # Obliczamy dynamiczny budżet na wiadomości po odliczeniu schematów narzędzi
     msgs_budget = max(25000, MAX_PROMPT_LEN - len(tools_suffix))
@@ -4774,6 +4786,102 @@ def chat_completions(req: ChatRequest, raw_request: Request):
         _parallel_gate.release()
 
 
+@app.post("/chat/completions/dry-run")
+@app.post("/v1/chat/completions/dry-run")
+def chat_completions_dry_run(req: ChatRequest, raw_request: Request):
+    """Dry-run endpoint: inspect and validate request without calling DeepSeek or consuming accounts."""
+    return _chat_completions_dry_run_impl(req, raw_request)
+
+
+def _chat_completions_dry_run_impl(req: ChatRequest, raw_request: Request):
+    t0 = time.time()
+    try:
+        req_port = raw_request.url.port or raw_request.scope.get("server", [None, 4570])[1]
+    except Exception:
+        req_port = 4570
+    is_clean_port = (req_port == 4571) or (raw_request.headers.get("x-proxy-clean") == "true")
+
+    # Determine conv_key and session lookup
+    conv_key = _get_conv_key(req.messages)
+    with _conv_lock:
+        state = _conv_state.get(conv_key)
+
+    target_account = None
+    forced_slot = raw_request.headers.get("x-target-slot") or raw_request.headers.get("x-slot")
+    if forced_slot and forced_slot.strip().isdigit():
+        target_account = int(forced_slot.strip())
+    elif state and "account" in state:
+        target_account = state["account"]
+    else:
+        valid_slots = [i for i in range(MAX_ACCOUNTS) if ap.is_valid(i)]
+        target_account = valid_slots[0] if valid_slots else 0
+
+    is_resume = bool(state and state.get("ds_session"))
+
+    # Build prompt
+    tools = req.tools if not is_clean_port else None
+    if is_resume:
+        new_msgs = [m for m in req.messages[state.get("msgs_len", 0):] if m.get("role") in ("user", "tool")]
+        if not new_msgs:
+            new_msgs = [m for m in req.messages[-1:] if m.get("role") != "system"]
+        prompt = _build_prompt(new_msgs, tools=None, state=state)
+    else:
+        prompt = _build_prompt(req.messages, tools=tools, state=state)
+
+    orig_prompt_len = len(prompt)
+    doc_attachments = []
+    lean_prompt = prompt
+    if len(prompt) > PROMPT_ATTACHMENT_THRESHOLD:
+        try:
+            lean_prompt, doc_attachments = extract_oversized_blocks_to_attachments(prompt)
+        except Exception as e:
+            print(f"[DRY-RUN] Attachment extraction error: {e}", flush=True)
+
+    sanitized_prompt = sanitize_system_tokens(lean_prompt) if not is_clean_port else lean_prompt
+
+    elapsed_ms = round((time.time() - t0) * 1000, 2)
+    dry_log_file = Path(__file__).parent / "data" / "dry_run_logs.ndjson"
+
+    res_data = {
+        "status": "dry_run_success",
+        "timestamp": datetime.now().isoformat(),
+        "elapsed_ms": elapsed_ms,
+        "port": req_port,
+        "is_clean_port": is_clean_port,
+        "model": req.model,
+        "stream": req.stream,
+        "account_target": target_account,
+        "session": {
+            "is_resume": is_resume,
+            "conv_key_prefix": conv_key[:30] + "..." if conv_key else None,
+            "ds_session": state.get("ds_session") if state else None,
+            "parent_id": state.get("parent_id") if state else None,
+        },
+        "raw": {
+            "messages_count": len(req.messages),
+            "tools_count": len(req.tools or []),
+            "tool_names": [t.get("function", t).get("name", "?") for t in (req.tools or [])],
+        },
+        "processed": {
+            "original_prompt_chars": orig_prompt_len,
+            "lean_prompt_chars": len(sanitized_prompt),
+            "attachments_extracted": len(doc_attachments),
+            "attachment_names": [d["filename"] for d in doc_attachments],
+            "prompt_preview_head": sanitized_prompt[:500],
+            "prompt_preview_tail": sanitized_prompt[-300:] if len(sanitized_prompt) > 500 else None,
+        }
+    }
+
+    try:
+        dry_log_file.parent.mkdir(parents=True, exist_ok=True)
+        with open(dry_log_file, "a", encoding="utf-8") as f:
+            f.write(json.dumps(res_data, ensure_ascii=False) + "\n")
+    except Exception as e:
+        print(f"[DRY-RUN] Failed writing log: {e}", flush=True)
+
+    return JSONResponse(content=res_data)
+
+
 def _chat_completions_impl(req: ChatRequest, raw_request: Request):
     t0 = time.time()
     try:
@@ -5403,6 +5511,29 @@ def _chat_completions_impl(req: ChatRequest, raw_request: Request):
         print(f"[EMPTY PROMPT GUARD] Prompt wyszedł pusty — zamiast niego wysyłam bodziec (sesja ma kontekst)", flush=True)
         prompt = "[System: Please continue the task.]"
 
+    # ── Document Attachment Strategy (Senior Upgrade) ──
+    # Jeśli prompt przekracza próg 35k znaków, wyciągamy olbrzymie wyniki narzędzi i reguły
+    # do natywnych załączników markdown (.md) DeepSeeka (do 100MB każdy), eliminując opóźnienia i chunking.
+    if len(prompt) > PROMPT_ATTACHMENT_THRESHOLD:
+        try:
+            lean_prompt, doc_attachments = extract_oversized_blocks_to_attachments(prompt)
+            if doc_attachments:
+                print(f"[ATTACHMENTS] Extracted {len(doc_attachments)} oversized block(s) into native documents (prompt {len(prompt)} -> {len(lean_prompt)} chars)", flush=True)
+                for doc in doc_attachments:
+                    try:
+                        doc_file_id = ds.upload_file(account_idx, doc["data"], doc["filename"], mime_type=doc["mime_type"])
+                        if doc_file_id:
+                            ref_file_ids.append(doc_file_id)
+                            print(f"[ATTACHMENTS] Uploaded {doc['filename']} ({len(doc['data'])} bytes) -> {doc_file_id}", flush=True)
+                    except Exception as ue:
+                        print(f"[ATTACHMENTS] Warning: upload failed for {doc['filename']}: {ue}", flush=True)
+                prompt = lean_prompt
+        except Exception as de:
+            print(f"[ATTACHMENTS] Extraction error: {de}", flush=True)
+
+    # ── Token Sanitization (Prevents WAF Prompt-Injection Bans) ──
+    if not is_clean_port:
+        prompt = sanitize_system_tokens(prompt)
 
     result = None
     migrated = False

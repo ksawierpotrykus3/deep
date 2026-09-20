@@ -29,11 +29,13 @@ data/msg_structure.txt
 data/token_fields.txt
 data/*.log
 data/*.jsonl
+data/*.ndjson
 data/crashed_chats/
 .env
 
 # Logs & Dumps
 *.log
+*.ndjson
 proxy_output.log
 server_stdout.log
 server_stderr.log
