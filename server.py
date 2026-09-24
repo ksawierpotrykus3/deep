@@ -175,6 +175,38 @@ _last_search_completion_time: float = 0.0
 _search_pacing_lock = threading.Lock()
 _auto_login_lock = threading.Lock()
 
+# Lock do atomowego pisania linii odliczania (żeby wątki nie rozrywały linii w konsoli).
+_console_lock = threading.Lock()
+
+
+def _live_sleep(seconds: float, label: str, reason: str = ""):
+    """Odliczanie na żywo w konsoli zamiast cichego time.sleep().
+
+    Co sekundę nadpisuje jedną linię pokazując, ile jeszcze zostało do
+    wysłania następnej wiadomości (pacing / tarcza anty-ban / rate-limit / cooldown).
+    """
+    if not seconds or seconds <= 0:
+        return
+    end = time.time() + seconds
+    tail = f" | {reason}" if reason else ""
+    prev_len = 0
+    while True:
+        rem = end - time.time()
+        if rem <= 0:
+            break
+        line = f"\r[ODLICZANIE] {label}: {rem:5.1f}s do następnej wiadomości{tail}"
+        pad = " " * max(0, prev_len - len(line))
+        prev_len = len(line)
+        with _console_lock:
+            sys.stdout.write(line + pad)
+            sys.stdout.flush()
+        time.sleep(min(1.0, max(0.05, rem)))
+    done = f"\r[ODLICZANIE] {label}: odczekano {seconds:.1f}s — wysyłam wiadomość"
+    pad = " " * max(0, prev_len + 30 - len(done))
+    with _console_lock:
+        sys.stdout.write(done + pad + "\n")
+        sys.stdout.flush()
+
 def try_auto_login(slot_idx: int, ap_instance=None) -> bool:
     """Automatycznie odnawia sesje dla wygaslego slotu uzywajac auto_login.py i data/accounts.json."""
     with _auto_login_lock:
@@ -1409,7 +1441,7 @@ class DeepSeek:
             g_elapsed = time.time() - _last_global_completion_time
             g_min = 3.5 + random.uniform(0.5, 1.5)  # 4.0 - 5.0s bufor pomiedzy zadaniami z tego samego IP
             if g_elapsed < g_min:
-                time.sleep(g_min - g_elapsed)
+                _live_sleep(g_min - g_elapsed, "PACING GLOBALNY IP", "bufor między zadaniami z tego samego IP")
             _last_global_completion_time = time.time()
 
         # 2. Bezpiecznik wyszukiwania sieciowego (search_enabled / model search)
@@ -1421,7 +1453,7 @@ class DeepSeek:
                 if s_elapsed < s_min:
                     s_sleep = s_min - s_elapsed
                     print(f"[SEARCH PACING] Bufor bezpieczenstwa dla wyszukiwarki: {s_sleep:.2f}s...", flush=True)
-                    time.sleep(s_sleep)
+                    _live_sleep(s_sleep, "PACING WYSZUKIWARKI", "bezpiecznik wyszukiwania sieciowego")
                 _last_search_completion_time = time.time()
 
         # 3. Dynamiczny antyspam pacing na koncie zależny od pojemności puli i obciążenia klastra
@@ -1449,7 +1481,11 @@ class DeepSeek:
         if _retry == 0 and elapsed < min_pacing:
             sleep_needed = min_pacing - elapsed
             print(f"[PACING] Pacing {sleep_needed:.2f}s na slocie {account_idx} ({pacing_reason}, od zakończenia poprzedniego zadania minęło {elapsed:.1f}s)...", flush=True)
-            time.sleep(sleep_needed)
+            _live_sleep(
+                sleep_needed,
+                f"TARCZA ANTY-BAN SLOT {account_idx}",
+                f"spowolnienie {cong_mult:.2f}x ({cong_desc}), min {min_pacing:.1f}s od ostatniej wiadomości",
+            )
         proxy_kwargs = cloud_shield.get_proxy_kwargs(account_idx)
         for attempt in range(max_retries + 1):
             try:
@@ -1610,7 +1646,7 @@ class DeepSeek:
                     _spam_budget[0] -= wait
                     print(f"[ANTYSPAM COOLDOWN] Preamble rate-limited na slocie {account_idx} ({err}). "
                           f"Pauza {wait:.0f}s (próba {_retry+1}/3, pozostały budżet {_spam_budget[0]:.0f}s)...", flush=True)
-                    time.sleep(wait)
+                    _live_sleep(wait, f"ANTY-SPAM SLOT {account_idx}", f"DeepSeek zgłosił rate-limit, próba {_retry+1}/3")
                     return self.stream_completion(account_idx, chat_session_id, prompt, parent_message_id, max_tokens=max_tokens, temperature=temperature, top_p=top_p, model_type=model_type, ref_file_ids=ref_file_ids, thinking_enabled=thinking_enabled, search_enabled=search_enabled, _retry=_retry+1, watermark_uuid=watermark_uuid, _spam_budget=_spam_budget)
                 raise RuntimeError(
                     f"DeepSeek anty-spam: wyczerpany budżet oczekiwania ({MAX_SPAM_WAIT_S:.0f}s) — {err}")
@@ -1623,7 +1659,7 @@ class DeepSeek:
             wait = 60 + random.randint(-10, 15)
             _rate_limited_until[account_idx] = time.time() + wait + 10
             print(f"[RETRY] Preamble rate-limited (attempt {_retry+1}), waiting {wait}s...", flush=True)
-            time.sleep(wait)
+            _live_sleep(wait, f"RATE-LIMIT SLOT {account_idx}", f"DeepSeek busy, ponowna próba {_retry+2}")
             return self.stream_completion(account_idx, chat_session_id, prompt, parent_message_id, max_tokens=max_tokens, temperature=temperature, top_p=top_p, model_type=model_type, ref_file_ids=ref_file_ids, thinking_enabled=thinking_enabled, search_enabled=search_enabled, _retry=_retry+1, watermark_uuid=watermark_uuid)
         resp_msg_id = int(resp_msg_id) if resp_msg_id else None
         if preamble_data_count == 0:
@@ -1651,7 +1687,7 @@ class DeepSeek:
             elif "message still wip" in raw_preview.lower() or '"biz_code":11' in raw_preview or '"biz_code": 11' in raw_preview:
                 print(f"[WIP] Previous message still generating on DeepSeek. Requesting stop and waiting...", flush=True)
                 self.stop_completion(account_idx, chat_session_id)
-                time.sleep(3.5)
+                _live_sleep(3.5, f"WIP SLOT {account_idx}", "poprzednia wiadomość wciąż się generuje")
                 if _retry < 4:
                     return self.stream_completion(account_idx, chat_session_id, prompt, parent_message_id, max_tokens=max_tokens, temperature=temperature, top_p=top_p, model_type=model_type, ref_file_ids=ref_file_ids, thinking_enabled=thinking_enabled, search_enabled=search_enabled, _retry=_retry+1, watermark_uuid=watermark_uuid)
             elif _retry < 2:
@@ -1869,7 +1905,11 @@ class DeepSeek:
                                           f"Pauza {wait:.0f}s (próba {_retry+1}/{max_retries}, pozostały budżet {_spam_budget[0]:.0f}s)...", flush=True)
                                 else:
                                     print(f"[RETRY] Chwilowy błąd DeepSeek ({err_msg}), ponawiam na slocie {account_idx} za {wait}s (próba {_retry+1}/{max_retries})...", flush=True)
-                                time.sleep(wait)
+                                _live_sleep(
+                                    wait,
+                                    f"RETRY SLOT {account_idx} ({_retry+1}/{max_retries})",
+                                    ("anty-spam: zbyt częste wiadomości" if is_spam else f"chwilowy błąd: {err_msg}"),
+                                )
                                 retry_result = self.stream_completion(account_idx, chat_session_id, retry_prompt, parent_message_id, max_tokens=max_tokens, temperature=temperature, top_p=top_p, model_type=model_type, ref_file_ids=ref_file_ids, thinking_enabled=thinking_enabled, search_enabled=search_enabled, _retry=_retry+1, watermark_uuid=watermark_uuid, _spam_budget=_spam_budget)
                                 if retry_result is not None:
                                     new_gen, retry_meta = retry_result
@@ -1889,7 +1929,7 @@ class DeepSeek:
                         wait = 60 + random.randint(-10, 15)
                         _rate_limited_until[account_idx] = time.time() + wait + 10
                         print(f"[RETRY] Rate-limited (attempt {_retry+1}, reason={fr_raw}), waiting {wait}s...", flush=True)
-                        time.sleep(wait)
+                        _live_sleep(wait, f"RATE-LIMIT SLOT {account_idx}", f"DeepSeek busy ({fr_raw})")
                         retry_result = self.stream_completion(account_idx, chat_session_id, prompt, parent_message_id, max_tokens=max_tokens, temperature=temperature, top_p=top_p, model_type=model_type, ref_file_ids=ref_file_ids, thinking_enabled=thinking_enabled, search_enabled=search_enabled, _retry=_retry+1, watermark_uuid=watermark_uuid)
                         if retry_result is None:
                             raise RuntimeError("Session expired during retry")
@@ -2068,7 +2108,11 @@ class DeepSeek:
                 # zanim przyjmie kolejną wiadomość w tym samym czacie. Bez tego od razu leci
                 # "Zbyt częste wiadomości" (rate_limit_reached) i odzyskiwanie pada, a użytkownik
                 # dostaje "pusty strumień". Cooldown rośnie z każdym szczeblem drabinki.
-                time.sleep(cooldown)
+                _live_sleep(
+                    cooldown,
+                    f"COOLDOWN DRABINKI {ladder_step}/{len(ladder)}",
+                    f"sesja zakończyła generację (outcome={turn_outcome})",
+                )
                 # Ponawiamy CAŁĄ kontynuację razem z iteracją generatora — błąd potrafi wylecieć
                 # dopiero przy czytaniu tokenów, nie przy samym wywołaniu stream_completion.
                 # Ponawiamy wyłącznie wtedy, gdy nic jeszcze nie wysłaliśmy (inaczej duplikaty).
@@ -2148,7 +2192,7 @@ class DeepSeek:
                             wait = 5 + _ca_try * 7
                             print(f"[AUTO-CONTINUE] Continue failed ({str(ce)[:120]}) — próba {_ca_try+1}/3, czekam {wait}s", flush=True)
                             if _ca_try < 2:
-                                time.sleep(wait)
+                                _live_sleep(wait, f"AUTO-CONTINUE ({_ca_try+1}/3)", f"continue nieudane: {str(ce)[:80]}")
                 if not cont_ok and not cont_yielded:
                     print(f"[AUTO-CONTINUE] Sesja zajęta/rate-limited — odzyskiwanie nieudane", flush=True)
                     break
@@ -2900,6 +2944,7 @@ def _build_prompt(messages: list[dict], tools: list[dict] | None = None, images:
   <parameter name="file_path">c:/path/to/file</parameter>
   <parameter name="content">file content here</parameter>
 </tool_call>
+6. WINDOWS PATHS: system to Windows. Ścieżki podawaj WYŁĄCZNIE w formacie natywnym (np. "c:/Users/name/project" lub "C:\\Users\\name\\project"). NIGDY nie używaj formatu MSYS/bash ("/c:/Users/...", "/c/Users/...") — narzędzia Read/LS/Glob go nie rozumieją i zwracają błąd lub puste drzewo. W polu "pattern" narzędzia Glob/Grep umieszczaj TYLKO wzorzec relatywny (np. "**/*.md"); katalog bazowy przekazuj w osobnym polu "path", nigdy nie wklejaj pełnej ścieżki z dyskiem do "pattern".
 
 <system-reminder>
 CRITICAL AGENTIC RULE:
@@ -3088,6 +3133,44 @@ def _repair_tool_call(name: str, params: dict) -> tuple[str, dict]:
 
 _NUMERIC_PARAM_KEYS = {"offset", "limit", "head_limit", "max_tokens", "max_completion_tokens", "wait_ms_before_async"}
 
+# BUG-036: ścieżki w formacie MSYS (/c:/Users/... lub /c/Users/...) pochodzące z
+# bashowego otoczenia modelu nie są rozumiane przez natywne narzędzia Trae na
+# Windows (Read/LS/Glob zwracają "Failed to read file range"/puste drzewo).
+# Normalizujemy je do natywnego "c:/Users/...".
+_MSYS_PATH_RE = re.compile(r'^/([a-zA-Z])(?::)?/')
+_PATH_PARAM_KEYS = ("file_path", "path", "cwd", "file_paths")
+
+
+def _normalize_win_path(v):
+    if isinstance(v, str):
+        m = _MSYS_PATH_RE.match(v)
+        if m:
+            return f"{m.group(1).lower()}:/" + v[m.end():]
+    elif isinstance(v, list):
+        return [_normalize_win_path(x) for x in v]
+    return v
+
+
+# BUG-036b: model potrafi wkleić pełną absolutną ścieżkę z dyskiem do pola "pattern"
+# narzędzia Glob/Grep (np. pattern="c:/proj/x/**/*.md"). Silnik traktuje "pattern"
+# jako wzorzec relatywny do workspace i zwraca "No results found". Rozbijamy taką
+# wartość na "path" (katalog bazowy) + relatywny "pattern".
+_ABS_PATH_IN_PATTERN_RE = re.compile(r'^([a-zA-Z]:[\\/][^*?]*[\\/])(.+)$')
+
+
+def _split_abs_pattern(params: dict) -> None:
+    pat = params.get("pattern")
+    if not isinstance(pat, str):
+        return
+    m = _ABS_PATH_IN_PATTERN_RE.match(pat)
+    if not m:
+        return
+    prefix = m.group(1).replace("\\", "/").rstrip("/")
+    rest = m.group(2).lstrip("/")
+    params["pattern"] = rest
+    if not params.get("path"):
+        params["path"] = prefix
+
 
 def _sanitize_tool_params(name: str, params: dict) -> dict:
     """Normalizuje parametry numeryczne (BUG-021: offset=False -> deserialize params error).
@@ -3099,6 +3182,16 @@ def _sanitize_tool_params(name: str, params: dict) -> dict:
     """
     if not isinstance(params, dict):
         return params
+
+    # BUG-036: normalizacja ścieżek MSYS -> Windows (przed dalszym przetwarzaniem)
+    for pk in _PATH_PARAM_KEYS:
+        if pk in params:
+            params[pk] = _normalize_win_path(params[pk])
+
+    # BUG-036b: absolutna ścieżka w polu "pattern" Glob/Grep -> path + relatywny pattern
+    if (name or "").lower() in ("glob", "grep"):
+        _split_abs_pattern(params)
+
     out = {}
     for k, v in params.items():
         if k in _NUMERIC_PARAM_KEYS:
@@ -3228,7 +3321,7 @@ def _should_bump_state(tools_yielded: int, result_meta: dict) -> bool:
 # Obsługuje zarówno pełne domknięcia </||DSML||parameter>, </parameter>, jak i nagi </||DSML||>,
 # oraz zagnieżdżony markap DSML wewnątrz treści (np. zapisy logów/transkryptów w Write/SearchReplace).
 _INVOKE_OPEN_RE = re.compile(
-    r'''<\s*(?:[|｜\uff5c\u2502\s]*DSML[|｜\uff5c\u2502\s]*\s*(?:tool_call|invoke|tool_capability|_call|call|tool|调用|調用|工具|函数)?|(?:tool_call|invoke|tool_capability|_call|call|tool|调用|調用|工具|函数))\s+(?:[^>]*?\s+)?name=(["'])([^"']*?)\1[^>]*>''',
+    r'''<\s*(?:[|｜\uff5c\u2502\s]*DSML(?![\s|｜\uff5c\u2502]*(?:parameter|param|参数|參數)\b)[|｜\uff5c\u2502\s]*\s*(?:tool_call|invoke|tool_capability|_call|call|tool|调用|調用|工具|函数)?|(?:tool_call|invoke|tool_capability|_call|call|tool|调用|調用|工具|函数))\s+(?:[^>]*?\s+)?name=(["'])([^"']*?)\1[^>]*>''',
     re.IGNORECASE
 )
 _INVOKE_CLOSE_RE = re.compile(
@@ -3236,7 +3329,7 @@ _INVOKE_CLOSE_RE = re.compile(
     re.IGNORECASE
 )
 _PARAM_OPEN_RE = re.compile(
-    r'''<\s*(?:[|｜\uff5c\u2502\s]*DSML[|｜\uff5c\u2502\s]*\s*)?(?:parameter|参数|參數)\s+(?:[^>]*?\s+)?name=(["'])([^"']+?)\1[^>]*>''',
+    r'''</?\s*(?:[|｜\uff5c\u2502\s]*DSML[|｜\uff5c\u2502\s]*\s*)?(?:parameter|参数|參數)\s+(?:[^>]*?\s+)?name=(["'])([^"']+?)\1[^>]*>''',
     re.IGNORECASE
 )
 _PARAM_CLOSE_RE = re.compile(

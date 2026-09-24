@@ -48,8 +48,10 @@ _pyinfo.txt
 *.bak
 *.bak_*
 scratch/
+deepseek-proxy/
 
 # Gemini
 gemini_proxy/
 *Gemini*
 *gemini*
+

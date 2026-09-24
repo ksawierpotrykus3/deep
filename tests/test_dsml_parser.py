@@ -201,6 +201,62 @@ line 2 modified</｜｜DSML｜｜>
         args = json.loads(calls[0][3])
         self.assertEqual(args["file_path"], "c:/test.txt")
 
+    def test_param_tag_not_treated_as_invoke_open(self):
+        """BUG-035: <｜｜DSML｜｜ parameter ...> must NOT be matched as a nested invoke opening tag.
+
+        Regression: _INVOKE_OPEN_RE with an optional invoke keyword also matched the
+        parameter tags, driving nesting depth to 7 and leaving count=0 (Trae hang).
+        """
+        text = """<｜｜DSML｜｜invoke name="Read">
+<｜｜DSML｜｜parameter name="file_path">c:/x.md</｜｜DSML｜｜parameter>
+<｜｜DSML｜｜parameter name="limit" string="false">200</｜｜DSML｜｜parameter>
+</｜｜DSML｜｜invoke>"""
+        self.assertEqual(len(server._INVOKE_OPEN_RE.findall(text)), 1)
+        calls = server._parse_tool_calls(text, allow_unclosed=True)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0][2], "Read")
+        args = json.loads(calls[0][3])
+        self.assertEqual(args["file_path"], "c:/x.md")
+        self.assertEqual(args["limit"], 200)
+
+    def test_malformed_slash_lead_param_tag(self):
+        """BUG-035: malformed '</｜｜DSML｜｜ parameter name="command">' must still be recognized.
+
+        DeepSeek sometimes emits a close-slash-prefixed parameter tag instead of an
+        opening one, losing critical fields such as RunCommand.command.
+        """
+        text = """<｜｜DSML｜｜invoke name="RunCommand">
+<｜｜DSML｜｜parameter name="blocking" string="false">true</｜｜DSML｜｜parameter>
+</｜｜DSML｜｜parameter name="command" string="true">Get-ChildItem -Force</｜｜DSML｜｜parameter>
+</｜｜ invoke>"""
+        calls = server._parse_tool_calls(text, allow_unclosed=True)
+        self.assertEqual(len(calls), 1)
+        args = json.loads(calls[0][3])
+        self.assertEqual(args["blocking"], True)
+        self.assertEqual(args["command"], "Get-ChildItem -Force")
+
+    def test_msys_path_normalized(self):
+        """BUG-036: MSYS-style paths (/c:/... or /c/...) must be normalized to c:/..."""
+        for raw in ("/c:/Users/x/proj/a.md", "/c/Users/x/proj/a.md"):
+            text = f"""<｜｜DSML｜｜invoke name="Read">
+<｜｜DSML｜｜parameter name="file_path">{raw}</｜｜DSML｜｜parameter>
+</｜｜ invoke>"""
+            calls = server._parse_tool_calls(text, allow_unclosed=True)
+            self.assertEqual(len(calls), 1)
+            args = json.loads(calls[0][3])
+            self.assertEqual(args["file_path"], "c:/Users/x/proj/a.md")
+
+    def test_absolute_path_in_glob_pattern_split(self):
+        """BUG-036b: absolute path wrongly placed in Glob.pattern -> path + relative pattern."""
+        text = """<｜｜DSML｜｜invoke name="Glob">
+<｜｜DSML｜｜parameter name="pattern">c:/Users/x/proj/**/*.md</｜｜DSML｜｜parameter>
+</｜｜ invoke>"""
+        calls = server._parse_tool_calls(text, allow_unclosed=True)
+        self.assertEqual(len(calls), 1)
+        args = json.loads(calls[0][3])
+        self.assertEqual(args["pattern"], "**/*.md")
+        self.assertEqual(args["path"], "c:/Users/x/proj")
+
 
 if __name__ == "__main__":
     unittest.main()
