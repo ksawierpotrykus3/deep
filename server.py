@@ -2485,10 +2485,24 @@ def _compress_tool_results(messages: list[dict], threshold: int = 25000) -> list
             )
             compressed = f"{banner}\n\n" + "\n".join(kept) + f"\n\n[... Pominięto {omitted} kolejnych linii ({end_l+1}-{total_lines}) — użyj Read z offset={end_l+1} aby przeczytać resztę ...]"
         else:
-            # Inny wynik narzędzia (Grep, Glob, itp.)
+            # Inny wynik narzędzia (Grep, Glob, LS, itp.)
+            is_tree = any(marker in content for marker in ("├──", "└──", "│   ", "\\---", "+---")) or (
+                sum(1 for l in lines[:30] if l.strip().endswith(("/", "\\"))) >= 3
+            )
             kept_chunk = content[:threshold]
             omitted_chars = char_count - len(kept_chunk)
-            banner = f"[INFO DLA AI: Wynik przycięty do {len(kept_chunk)}/{char_count} znaków ze względu na limit długości.]"
+            if is_tree:
+                banner = (
+                    f"[DIRECTORY LISTING TRUNCATED: Pokazano {len(kept_chunk)}/{char_count} znaków drzewa katalogów.]\n"
+                    f"[KRYTYCZNE OSTRZEŻENIE DLA AI: Wynik listingu przekroczył limit bufora i został UCIĘTY alfabetycznie!\n"
+                    f"Katalogi i pliki z dalszej części alfabetu NIE ZNALAZŁY SIĘ w tym wyniku. "
+                    f"NIGDY nie zakładaj, że nie istnieją! Aby je natychmiast zbadać:\n"
+                    f"1. Wywołaj RunCommand: Get-ChildItem -Directory (lub dir /ad /b) aby zobaczyć 100% folderów głównych bez ucinania.\n"
+                    f"2. Użyj Glob z pattern=\"*\" (tylko pliki/foldery pierwszego poziomu) lub selektywnym pattern=\"<folder>/**\".\n"
+                    f"3. Użyj LS bezpośrednio na konkretnych podkatalogach lub z ignore.]"
+                )
+            else:
+                banner = f"[INFO DLA AI: Wynik przycięty do {len(kept_chunk)}/{char_count} znaków ze względu na limit długości.]"
             compressed = f"{banner}\n\n{kept_chunk}\n\n[... Pominięto {omitted_chars} kolejnych znaków wyniku ...]"
         result.append(dict(msg, content=compressed))
     return result
@@ -2632,6 +2646,83 @@ def _annotate_read_tool_result(content: str, file_path: str, offset: int | None 
     return f"{banner}\n\n{content}"
 
 
+def _annotate_ls_tool_result(content: str, dir_path: str | None = None, targs: dict | None = None) -> str:
+    """Wzbogaca wynik narzędzia LS o detekcję uciętych katalogów na dysku i instrukcje alternatywnego listingu."""
+    if not isinstance(content, str) or not content.strip() or "[DIRECTORY LISTING" in content:
+        return content
+
+    target_dir = None
+    if dir_path and isinstance(dir_path, str):
+        target_dir = _normalize_win_path(dir_path)
+    elif targs and isinstance(targs, dict):
+        p = targs.get("path") or targs.get("dir_path") or targs.get("directory")
+        if p and isinstance(p, str):
+            target_dir = _normalize_win_path(p)
+
+    if not target_dir:
+        cwd = _last_known_env.get("cwd")
+        if cwd and os.path.isdir(cwd):
+            target_dir = cwd
+
+    disk_dirs = []
+    disk_files = []
+    missing_dirs = []
+    if target_dir:
+        try:
+            target_dir = os.path.abspath(target_dir)
+            if os.path.isdir(target_dir):
+                ignored_names = {".git", ".venv", "venv", "__pycache__", ".pytest_cache", ".chrome_slot", "node_modules", ".idea", ".vscode"}
+                with os.scandir(target_dir) as it:
+                    for e in it:
+                        if e.name in ignored_names:
+                            continue
+                        if e.is_dir():
+                            disk_dirs.append(e.name)
+                        elif e.is_file():
+                            disk_files.append(e.name)
+                disk_dirs.sort(key=str.lower)
+                disk_files.sort(key=str.lower)
+                for d in disk_dirs:
+                    pat = rf"(?:^|[\\/\s\"']){re.escape(d)}(?:[\\/\s\"']|$)"
+                    if not re.search(pat, content):
+                        missing_dirs.append(d)
+        except Exception:
+            pass
+
+    is_truncated = (
+        len(content) >= 20000
+        or "[... Pominięto" in content
+        or "truncated" in content.lower()
+        or "output limit" in content.lower()
+        or "exceeds" in content.lower()
+        or bool(missing_dirs)
+    )
+
+    if missing_dirs:
+        missing_str = ", ".join(f"`{d}`" for d in missing_dirs)
+        banner = (
+            f"[DIRECTORY LISTING ALERT: TRUNCATED / INCOMPLETE]\n"
+            f"[KRYTYCZNE OSTRZEŻENIE DLA AI: Wynik narzędzia LS został ucięty przez limit bufora znaków!]\n"
+            f"Na dysku w ścieżce '{target_dir}' istnieje łącznie {len(disk_dirs)} folderów i {len(disk_files)} plików.\n"
+            f"FOLDERY POMINIĘTE W POWYŻSZYM LISTINGU ({len(missing_dirs)}): {missing_str}\n\n"
+            f"NIGDY nie zakładaj, że pominięte foldery nie istnieją! Aby je natychmiast zbadać:\n"
+            f"1. RunCommand: Get-ChildItem -Directory (lub dir /ad /b) — aby zobaczyć 100% folderów głównych bez ucinania.\n"
+            f"2. LS dla konkretnego podfolderu: LS(path=\"{target_dir}/<nazwa_folderu>\").\n"
+            f"3. Glob z selektywnym patternem: pattern=\"*\" (tylko pliki/foldery pierwszego poziomu) lub pattern=\"<folder>/**\"."
+        )
+        return f"{banner}\n\n{content}"
+    elif is_truncated:
+        banner = (
+            f"[DIRECTORY LISTING ALERT: DUŻY / POTENCJALNIE UCIĘTY LISTING ({len(content)} znaków)]\n"
+            f"[UWAGA DLA AI: Listing jest bardzo obszerny i mógł zostać obcięty alfabetycznie. "
+            f"Jeśli szukasz konkretnych folderów/plików i ich tu nie widzisz, NIE ZAKŁADAJ że nie istnieją. "
+            f"Użyj 'Get-ChildItem -Directory' przez RunCommand lub 'Glob' z pattern=\"*\".]"
+        )
+        return f"{banner}\n\n{content}"
+
+    return content
+
+
 def _format_msgs(msgs: list[dict], keep_images: bool = False, strip_reminders: bool = False) -> list[str]:
     parts = []
     tool_call_map = {}
@@ -2689,6 +2780,9 @@ def _format_msgs(msgs: list[dict], keep_images: bool = False, strip_reminders: b
                     fp = targs.get("file_path") or targs.get("path") or targs.get("filePath")
                     if fp:
                         content = _annotate_read_tool_result(content, str(fp), offset=targs.get("offset"), limit=targs.get("limit"))
+                elif tname in ("LS", "ls", "list_dir", "directory_tree", "list_directory", "list_files"):
+                    dp = targs.get("path") or targs.get("dir_path") or targs.get("directory")
+                    content = _annotate_ls_tool_result(content, str(dp) if dp else None, targs=targs)
                 tool_label = f"[Tool Result ({tname})]" if tname else "[Tool Result]"
                 parts.append(f"{tool_label}:\n{content.strip()}")
         if tc:
@@ -2945,6 +3039,15 @@ def _build_prompt(messages: list[dict], tools: list[dict] | None = None, images:
   <parameter name="content">file content here</parameter>
 </tool_call>
 6. WINDOWS PATHS: system to Windows. Ścieżki podawaj WYŁĄCZNIE w formacie natywnym (np. "c:/Users/name/project" lub "C:\\Users\\name\\project"). NIGDY nie używaj formatu MSYS/bash ("/c:/Users/...", "/c/Users/...") — narzędzia Read/LS/Glob go nie rozumieją i zwracają błąd lub puste drzewo. W polu "pattern" narzędzia Glob/Grep umieszczaj TYLKO wzorzec relatywny (np. "**/*.md"); katalog bazowy przekazuj w osobnym polu "path", nigdy nie wklejaj pełnej ścieżki z dyskiem do "pattern".
+7. DIRECTORY LISTING & EXPLORATION (ANTI-TRUNCATION):
+   - Narzędzie `LS` na głównym katalogu projektu przekracza limit znaków bufora (~40k) i UCINA listę alfabetycznie (np. zatrzymuje się na folderze 'badania/', przez co foldery 'docs/', 'kod/', 'src/' w ogóle do Ciebie nie docierają!).
+   - NIGDY nie zakładaj, że widzisz cały projekt po pojedynczym wywołaniu `LS`!
+   - ZASADY EKSPLORACJI DUŻYCH PROJEKTÓW:
+     a) Aby natychmiast poznać architekturę i WSZYSTKIE foldery główne: użyj `RunCommand` z `Get-ChildItem -Directory` (PowerShell) lub `dir /ad /b` (CMD). Zwraca to 100% folderów w 5 linijkach bez żadnego ucinania.
+     b) Aby szukać plików w projekcie: użyj `Glob` z pattern="*" (pliki i foldery pierwszego poziomu) lub selektywnym pattern="<katalog>/**".
+     c) Narzędzie `LS` wywołuj na konkretnych podfolderach (np. path="c:/.../kod", path="c:/.../docs"), a na roocie stosuj parametr ignore: ["badania/**", "node_modules/**"].
+   - Jeśli w wyniku narzędzia pojawi się komunikat '[DIRECTORY LISTING ALERT: TRUNCATED / INCOMPLETE]' z listą pominiętych folderów: NATYCHMIAST zbadaj te foldery dedykowanym wywołaniem `LS` lub `Get-ChildItem`!
+
 
 <system-reminder>
 CRITICAL AGENTIC RULE:
@@ -4600,6 +4703,10 @@ def _handle_official_api_chat(
                 fp = targs.get("file_path") or targs.get("path") or targs.get("filePath")
                 if fp and isinstance(content, str):
                     content = _annotate_read_tool_result(content, str(fp), offset=targs.get("offset"), limit=targs.get("limit"))
+            elif tname in ("LS", "ls", "list_dir", "directory_tree", "list_directory", "list_files"):
+                dp = targs.get("path") or targs.get("dir_path") or targs.get("directory")
+                if isinstance(content, str):
+                    content = _annotate_ls_tool_result(content, str(dp) if dp else None, targs=targs)
             # Compress large tool results
             if isinstance(content, str) and len(content) > 500000:
                 content = f"[Tool result: {len(content)} chars — compressed for context limits]"

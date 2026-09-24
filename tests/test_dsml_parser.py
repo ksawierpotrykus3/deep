@@ -257,6 +257,35 @@ line 2 modified</｜｜DSML｜｜>
         self.assertEqual(args["pattern"], "**/*.md")
         self.assertEqual(args["path"], "c:/Users/x/proj")
 
+    def test_annotate_ls_missing_dirs_detected(self):
+        """Test wykrywania uciętych katalogów na dysku przez _annotate_ls_tool_result."""
+        import os, tempfile, shutil
+        tmp = tempfile.mkdtemp()
+        try:
+            os.makedirs(os.path.join(tmp, "badania"))
+            os.makedirs(os.path.join(tmp, "docs"))
+            os.makedirs(os.path.join(tmp, "kod"))
+            # Symulujemy ucięty listing, który zawiera tylko 'badania'
+            truncated_ls = f"{tmp}/badania/file1.txt\n{tmp}/badania/file2.txt"
+            annotated = server._annotate_ls_tool_result(truncated_ls, dir_path=tmp)
+            self.assertIn("[DIRECTORY LISTING ALERT: TRUNCATED / INCOMPLETE]", annotated)
+            self.assertIn("docs", annotated)
+            self.assertIn("kod", annotated)
+            self.assertIn("Get-ChildItem -Directory", annotated)
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_compress_tool_results_tree_warning(self):
+        """Test kompresji zbyt długiego wyniku drzewa/listingu katalogu."""
+        tree_lines = [f"├── folder_{i}/" for i in range(1000)]
+        big_tree = "\n".join(tree_lines)
+        msgs = [{"role": "tool", "content": big_tree, "tool_call_id": "call_1"}]
+        compressed = server._compress_tool_results(msgs, threshold=1000)
+        content = compressed[0]["content"]
+        self.assertIn("[DIRECTORY LISTING TRUNCATED", content)
+        self.assertIn("Get-ChildItem -Directory", content)
+
 
 if __name__ == "__main__":
     unittest.main()
+
