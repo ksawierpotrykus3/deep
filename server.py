@@ -6449,6 +6449,24 @@ def reset_pool_status():
     return {"status": "ok", "message": "Zresetowano liczniki poola", "pool_status": _format_pool_status()}
 
 
+@app.post("/v1/slots/reload")
+@app.post("/v1/slots/reload/{slot}")
+def reload_slots_endpoint(slot: int | None = None):
+    """Przeładowuje sesje slotów z dysku bez restartu proxy."""
+    reloaded = []
+    with ap._pool_lock:
+        target_slots = [slot] if slot is not None else list(range(MAX_ACCOUNTS))
+        for s in target_slots:
+            if 0 <= s < MAX_ACCOUNTS:
+                p = ap._slot_path(s)
+                if p.exists():
+                    ap.reload_slot(s)
+                    _auth_expired_slots.discard(s)
+                    reloaded.append(s)
+    return {"status": "ok", "reloaded_slots": reloaded, "summary": _format_pool_status()}
+
+
+
 @app.get("/v1/monitor/sessions")
 def monitor_sessions():
     """Podgląd: co robią teraz główny agent i subagenci (active/slow/dead)."""
