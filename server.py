@@ -1470,9 +1470,9 @@ class DeepSeek:
             num_active = 1
 
         # Ochrona per-konto: niezaleznie od liczby kont w puli, to samo konto NIE MOZE
-        # dostac zapytania szybciej niz 28-35s od zakonczenia poprzedniego (tarcza anty-ban DeepSeek)!
-        base_pacing = 28.0 + random.uniform(2.0, 7.0)  # 30.0 - 35.0s
-        pacing_label = f"TARCZA ANTY-BAN SLOTU {account_idx} (30-35s)"
+        # dostac zapytania szybciej niz 15-20s od zakonczenia poprzedniego (tarcza anty-ban DeepSeek)!
+        base_pacing = random.uniform(15.0, 20.0)  # 15.0 - 20.0s
+        pacing_label = f"TARCZA ANTY-BAN SLOTU {account_idx} (15-20s)"
 
         cong_mult, cong_desc = _get_cluster_congestion_factor()
         min_pacing = base_pacing * cong_mult
